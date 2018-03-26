@@ -2,9 +2,8 @@
 #
 # .libPaths(c(.libPaths(), '/home/rahnm/R/lib'))
 
-library(multcomp)
+# library(multcomp)
 library(futile.logger)
-library(beanplot)
 library(data.table)
 library(EnvStats)
 
@@ -15,7 +14,6 @@ param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
 param.plot.width = 12
 param.plot.height = 12
 param.plot.units = "cm"
-param.plot.beanplot = FALSE
 
 param.ops.import = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/variation"
 
@@ -23,7 +21,7 @@ param.ops.import = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/
 
 #' import operationalization csv files and coerce them if more than one is being imported
 #'
-#' @param f: optional file path to import only a single operationalizations file
+#' @param f: optional project name to import only a single operationalizations file
 #' @return list of coerced operationalizations data frame
 coerce.ratios <- function(f = NULL) {
   if (is.null(f)) {
@@ -108,36 +106,19 @@ ops.boxplot.simple <- function(ops.ratios.simple) {
     height = param.plot.height,
     units = param.plot.units
   )
-  
-  if (!param.plot.beanplot) {
-    boxplot(
-      ops.ratios.simple,
-      xlab = "ratios",
-      ylab = "ratio value",
-      main = "Distribution of activity focus ratios",
-      names = c(
-        "code v issue",
-        "code rev. v cont.",
-        "issue rep. v disc.",
-        "tech. v disc."
-      ),
-      las = 2
-    )
-  } else{
-    beanplot(
-      ops.ratios.simple,
-      xlab = "ratios",
-      ylab = "ratio value",
-      main = "Distribution of activity focus ratios",
-      names = c(
-        "code v issue",
-        "code rev. v cont.",
-        "issue rep. v disc.",
-        "tech. v disc."
-      ),
-      las = 2
-    )
-  }
+  boxplot(
+    ops.ratios.simple,
+    xlab = "ratios",
+    ylab = "ratio value",
+    main = "Distribution of activity focus ratios",
+    names = c(
+      "code v issue",
+      "code rev. v cont.",
+      "issue rep. v disc.",
+      "tech. v disc."
+    ),
+    las = 2
+  )
   dev.off()
 }
 
@@ -223,22 +204,28 @@ ops.pairplot.rel(ops.all[[2]])
 #' tests H0 that variance is equal to 0
 #' function varTest comes from the package EnvStats
 #' chisq.test from package base has no One-Sample test against specified value implemented
-#' 
+#'
 #' @param var:  vector of numeric values
-#' 
-chisq.onesided <- function(var){
+#'
+chisq.onesided <- function(var) {
   var <- var[!is.na(var)]
-  t <- varTest(var, alternative = "greater", conf.level = 0.95, sigma.squared = 0.01)
+  t <-
+    varTest(
+      var,
+      alternative = "greater",
+      conf.level = 0.95,
+      sigma.squared = 0.01
+    )
   return(t)
 }
 
-#' performs a onesided chisquare test for all variables which are being passed in 
+#' performs a onesided chisquare test for all variables which are being passed in
 #' a matrix
 #' @param df:  data.frame containing numeric vectors
-#' @return list of htest objects  
-ops.test.var <- function (df){
+#' @return list of htest objects
+ops.test.var <- function (df) {
   res <- list()
-  for (i in colnames(df)){
+  for (i in colnames(df)) {
     res[[i]] = chisq.onesided(df[[i]])
   }
   return(res)
@@ -246,6 +233,3 @@ ops.test.var <- function (df){
 
 res.ops.ratios.simple.var = ops.test.var(ops.all[[1]])
 res.ops.ratios.rel.var = ops.test.var(ops.all[[2]])
-
-
-

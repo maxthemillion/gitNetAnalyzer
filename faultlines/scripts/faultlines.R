@@ -190,7 +190,10 @@ ops.calculate <- function(owner, dt_start, dt_end) {
   # ratio: code vs issue related activity
   # share of issue related activity in total activity per user
   df[, "ratio_code_issue"] =
-    ((df$no_issues_reported + df$issue_comments) / (df$total_technicals + df$total_comments)
+    (
+      (df$no_issues_reported + df$issue_comments) 
+      / 
+      (df$total_technicals + df$total_comments)
     )
   
   # ii.
@@ -198,41 +201,48 @@ ops.calculate <- function(owner, dt_start, dt_end) {
   # share of issue related activity in total activity per user in relation to the overall project
   # ratio of issue to total activity.
   df[, "ratio_rel_code_issue"] =
-    (((df$no_issues_reported + df$issue_comments) / (df$total_technicals + df$total_comments)
+    (
+      (
+        (df$no_issues_reported + df$issue_comments) 
+        / 
+        (df$total_technicals + df$total_comments)
+      )
+      /
+      (
+        sum(df$no_issues_reported + df$issue_comments) 
+        / 
+        sum(df$total_technicals + df$total_comments)
+      )
     )
-    /
-      (sum(
-        df$no_issues_reported + df$issue_comments
-      ) / (
-        sum(df$total_comments + df$total_technicals)
-      )))
   
   # iii.
   # ratio: code contributing vs code reviewing
   df[, "ratio_code_review_contribution"] =
-    ((df$commit_comments + df$pullreq_comments) /
-       (
-         df$commit_comments + df$pullreq_comments + df$no_pullrequests_requested + df$no_commits_committed
-       )
+    (
+      (df$commit_comments + df$pullreq_comments) 
+      /
+      (df$commit_comments + df$pullreq_comments + 
+         df$no_pullrequests_requested + df$no_commits_committed)
     )
   
   # iv.
   # ratio: relative code contributions vs reviews
   df[, "ratio_rel_code_review_contribution"] =
-    (((df$commit_comments + df$pullreq_comments) /
-        (
-          df$commit_comments + df$pullreq_comments + df$no_pullrequests_requested + df$no_commits_committed
-        )
-    )
-    /
-      ((
+    (
+      (
+        (df$commit_comments + df$pullreq_comments) 
+        /
+        (df$commit_comments + df$pullreq_comments + 
+           df$no_pullrequests_requested + df$no_commits_committed)
+      )
+      /
+      (
         sum(df$commit_comments + df$pullreq_comments)
-      ) /
-        (
-          sum(
-            df$commit_comments + df$pullreq_comments + df$no_pullrequests_requested + df$no_commits_committed
-          )
-        )))
+        /
+        sum(df$commit_comments + df$pullreq_comments + 
+              df$no_pullrequests_requested + df$no_commits_committed)
+      )
+    )
   
   # v.
   # ratio: issue reporting vs issue discussing
@@ -242,30 +252,46 @@ ops.calculate <- function(owner, dt_start, dt_end) {
   # vi.
   # ratio: relative issue reporting vs issue discussing
   df[, "ratio_rel_issue_reports_discussion"] =
-    ((
-      df$issue_comments / (df$issue_comments + df$no_issues_reported)
-    )
-    /
-      (sum(df$issue_comments) / (
+    (
+      (
+        df$issue_comments 
+        / 
+        (df$issue_comments + df$no_issues_reported)
+      )
+      /
+      (
+        sum(df$issue_comments) 
+        / 
         sum(df$issue_comments + df$no_issues_reported)
-      )))
+      )
+    )
   
   
   # vii.
   # ratio: technical contribution vs discussion
   df[, "ratio_technical_discussion"] =
-    (df$total_technicals / (df$total_technicals + df$total_comments))
+    (
+      df$total_technicals 
+      / 
+      (df$total_technicals + df$total_comments)
+    )
   
   # viii.
   # ratio: relaltive technical contribution vs discussion
   df[, "ratio_rel_technical_discussion"] =
-    ((
-      df$total_technicals / (df$total_technicals + df$total_comments)
-    )
-    /
-      (sum(df$total_technicals) / (
+    (
+      (
+        df$total_technicals 
+        / 
+        (df$total_technicals + df$total_comments)
+      )
+      /
+      (
+        sum(df$total_technicals) 
+        / 
         sum(df$total_technicals + df$total_comments)
-      )))
+      )
+    )
   
   return(df)
 }
