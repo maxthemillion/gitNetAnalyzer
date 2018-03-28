@@ -14,6 +14,12 @@ neo = startGraph("http://localhost:7474/db/data/",
 flog.threshold(INFO)
 flog.appender(appender.file('/home/rahnm/R/log/faultlines.log'))
 
+param.analysis.all = F
+param.analysis.single = 'waffleio'
+
+param.analysis.dt_start = "2014-01-01"
+param.analysis.dt_end = "2017-08-01"
+
 #' retrieves the comment subgraph per project
 #'   @param owner:      specific project
 #'   @param dt_start:   start date
@@ -34,8 +40,8 @@ get_comment_subgraph <- function(owner, dt_start, dt_end) {
     WHERE node.event_time >= start AND node.event_time <= end
     
     WITH node
-    MATCH (source:USER) -[:makes]-> (node)
-    MATCH p = (node) --> (target:USER)
+    MATCH p = (source:USER) -[:makes]-> (node) --> (target:USER)
+    WHERE id(source) <> id(target)
     
     WITH source,
     target,
@@ -54,6 +60,26 @@ get_comment_subgraph <- function(owner, dt_start, dt_end) {
   
   
   df = cypher(neo, query)
+  return(df)
+}
+
+#' retrieves all project names as list
+#'   @return list of owner logins
+get_project_names <- function() {
+  if (param.analysis.all) {
+    query = sprintf(
+      "
+      MATCH (o:OWNER)
+      WHERE EXISTS ((o) <-- (:GHA_REPO))
+      RETURN DISTINCT o.login as names;
+      "
+    )
+    
+    df = cypher(neo, query)
+    
+  } else {
+    df = data.frame(names = c(param.analysis.single))
+  }
   return(df)
 }
 
@@ -207,7 +233,7 @@ ops.calculate <- function(owner, dt_start, dt_end) {
         / 
         (df$total_technicals + df$total_comments)
       )
-      /
+      -
       (
         sum(df$no_issues_reported + df$issue_comments) 
         / 
@@ -235,7 +261,7 @@ ops.calculate <- function(owner, dt_start, dt_end) {
         (df$commit_comments + df$pullreq_comments + 
            df$no_pullrequests_requested + df$no_commits_committed)
       )
-      /
+      -
       (
         sum(df$commit_comments + df$pullreq_comments)
         /
@@ -258,7 +284,7 @@ ops.calculate <- function(owner, dt_start, dt_end) {
         / 
         (df$issue_comments + df$no_issues_reported)
       )
-      /
+      -
       (
         sum(df$issue_comments) 
         / 
@@ -285,7 +311,7 @@ ops.calculate <- function(owner, dt_start, dt_end) {
         / 
         (df$total_technicals + df$total_comments)
       )
-      /
+      -
       (
         sum(df$total_technicals) 
         / 
@@ -296,32 +322,17 @@ ops.calculate <- function(owner, dt_start, dt_end) {
   return(df)
 }
 
-
-#' clusters the given graph using the louvain algorithm
-#' 1. converts the given graph to an undirected igraph object
-#' 2. clusters the undirected graph using the louvain algorithm
-#'   @param graph.df:      data.frame in the format:
-#'                         source    gha_id of source node
-#'                         target    gha_id of target node
-#'                         weight    count of connections between source and target
-#'   @return igraph communities object
-cluster <- function(graph.df) {
-  g_u = as.undirected(graph.df, mode = "mutual", edge.attr.comb = "sum")
-  c = cluster_louvain(g_u)
-  return(c)
-}
-
 #' joins operationalization df with groups
 #' those users who did not contribute or have not been referenced by any comments will not be clustered into groups,
 #' since the clustering is based on comment relations. These users will be removed in the curse of the merging process
 #'   @param op:     operationalization data frame
 #'   @param c:      igraph communities object
 #'   @return merged data frame including group information per user
-join_ops_df_with_groups <- function(ops, c, g_d) {
-  com <- cbind(V(g_d)$name, c$membership)
+join_ops_df_with_groups <- function(ops, c, g) {
+  com <- cbind(V(g)$name, c$membership)
   com <- setNames(as.data.frame(com), c("gha_id", "group"))
   
-  df = merge(x = ops, y = com, by = "gha_id")
+  df = merge(x = ops, y = com, by = "gha_id", all.y = T)
   return (df)
 }
 
@@ -338,49 +349,52 @@ ops.get <- function(owner, dt_start, dt_end) {
   # get comment subgraph
   comments = get_comment_subgraph(owner, dt_start, dt_end)
   
-  # create directed graph from comment relations
-  g_d = graph_from_data_frame(comments)
-  
-  # cluster the graph
-  c = cluster(g_d)
-  
-  # create operationalizations table
-  ops = ops.calculate(owner, dt_start, dt_end)
-  
-  # add group information from louvain clustering
-  ops = join_ops_df_with_groups(ops, c, g_d)
-  
+  if (is.data.frame(comments) && !nrow(comments) == 0) {
+    # create directed graph from comment relations
+    g = graph_from_data_frame(comments, directed = F)
+    
+    # cluster the graph
+    c = cluster_louvain(g)
+    
+    # create operationalizations table
+    ops = ops.calculate(owner, dt_start, dt_end)
+    
+    # add group information from louvain clustering
+    ops = join_ops_df_with_groups(ops, c, g)
+  } else {
+    ops = NULL
+  }
   return(ops)
 }
 
-
 #' saves an operationalizations csv file per project
 main <- function () {
-  dt_start = "2014-01-01"
-  dt_end = "2017-08-01"
-  # owner = "OneDrive"
-  # owner_list = read.csv( ... )
+
   
-  owner_list = c(
-    'OneDrive',
-    'waffleio',
-    'getnikola',
-    'Tribler',
-    'BobPalmer',
-    'novus',
-    'rathena',
-    'gatsbyjs'
-  )
+  projects <- get_project_names()
   
-  for (owner in owner_list) {
-    ops <- ops.get(owner, dt_start, dt_end)
+  for (project in projects$names) {
+    tryCatch({
+      ops <- ops.get(project, 
+                     param.analysis.dt_start, 
+                     param.analysis.dt_end)
+    },
     
-    file.path.var = paste("/home/rahnm/R/analysis/faultlines/variation/op_df_",
-                          owner,
-                          ".csv",
-                          sep = "")
-    write.csv(ops, file = file.path.var)
+    error = function(cond) {
+      message("Error occurred while processing")
+      message(project)
+      message(cond)
+      return(NULL)
+    })
+    
+    if (!is.null(ops)) {
+      file.path.var = paste("/home/rahnm/R/analysis/faultlines/variation/op_df_",
+                            project,
+                            ".csv",
+                            sep = "")
+      write.csv(ops, file = file.path.var)
+    }
   }
 }
 
-ftry(main())
+ftry(main(), error = warning)

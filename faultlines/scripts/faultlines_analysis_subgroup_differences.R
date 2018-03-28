@@ -2,10 +2,12 @@ library(futile.logger)
 library(data.table)
 library(plyr)
 library(ggplot2)
+library(gridExtra)
 
-param.analysis.all = FALSE
-param.analysis.groups.size = 15
-param.analysis.groups.includeResiduals = TRUE
+param.analysis.all = FALSE                      # specifies, whether all or only a single project should be imported and analysed
+param.analysis.single = 'waffleio'              # name of a project which should be imported, when param.analysis.all = F
+param.analysis.groups.minsize = 10              # min group size which qualifies for further analysis
+param.analysis.groups.includeResiduals = TRUE   # if T, all remaining groups which are smaller than the specified minsize will be aggregated and analyzed as well
 
 param.plot.res = 300
 param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
@@ -15,7 +17,7 @@ param.plot.units = "cm"
 
 param.ops.import = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/variation"
 
-#' import operationalization csv files and coerce them if more than one is being imported
+#' import operationalization csv file
 #'
 #' @param f:  project name
 #' @return operationalizations data frame including group information
@@ -26,7 +28,6 @@ ops.import <- function(f) {
 
   return(ops)
 }
-
 
 #' selects groups according to project size
 #'
@@ -64,30 +65,23 @@ ops.groups.select <- function(ops, n = NULL, s = NULL){
   return(ops.new)
 }
 
-#' plot group sizes
-ops.groups.plot <- function (ops){
-  
-  
-  group.count = ddply(ops,"group", summarize, count=length(unique(gha_id)))
-  
+#' saves the supplied ggplot under the specified name
+#' @param plot  ggplot2 object
+#' @param name  filename to save the plot to
+save.plot <- function(plot, name){
   png(
-    filename = paste(param.plot.exp, "boxplot_group_size.png", sep = ""),
+    filename = paste(param.plot.exp, name, sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
     units = param.plot.units
   )
   
-  boxplot(
-    group.count$count,
-    xlab = "",
-    ylab = "group size",
-    main = "Distribution of group sizes"
-    # names = c(),
-  ) 
+  print(plot)
   
   dev.off()
 }
+
 
 ops.ratios.simple.boxplot <- function (ops){
   ops$group <- as.factor(ops$group)
@@ -96,8 +90,14 @@ ops.ratios.simple.boxplot <- function (ops){
   theme_update(axis.title = element_text(size = rel(0.65)))
   theme_update(axis.text = element_text(size = rel(0.5)))
   
+  if(!param.analysis.all){
+    title = "Distribution of simple activity ratios"
+  }else{
+    title = paste("Distribution of simple activity ratios\n project ", param.analysis.single)
+  }
+  
   png(
-    filename = paste(param.plot.exp, "boxplot_ops_ratios.png", sep = ""),
+    filename = paste(param.plot.exp, "boxplot_ops_ratios_simple_per_group.png", sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -126,8 +126,7 @@ ops.ratios.simple.boxplot <- function (ops){
     ylab("code contributions vs commenting") +
     ylim(0,1)
   
-  
-  grid.arrange(p1, p2, p3, p4, top = "Distribution of simple activity ratios")
+  grid.arrange(p1, p2, p3, p4, top = title)
   
   dev.off()
 }
@@ -139,8 +138,14 @@ ops.ratios.rel.boxplot <-function (ops){
   theme_update(axis.title = element_text(size = rel(0.65)))
   theme_update(axis.text = element_text(size = rel(0.5)))
   
+  if(!param.analysis.all){
+    title = "Distribution of relative activity ratios"
+  }else{
+    title = paste("Distribution of relative activity ratios\n project ", param.analysis.single)
+  }
+  
   png(
-    filename = paste(param.plot.exp, "boxplot_ops_ratios_rel.png", sep = ""),
+    filename = paste(param.plot.exp, "boxplot_ops_ratios_rel_per_group.png", sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -174,7 +179,7 @@ ops.ratios.rel.boxplot <-function (ops){
     ylim(0,2.5) +    
     geom_hline(yintercept=1, linetype="dashed", color = "red")
   
-  grid.arrange(p1, p2, p3, p4, top = "Distribution of relative activity ratios")
+  grid.arrange(p1, p2, p3, p4, top = title)
   
   dev.off()
 }
@@ -255,26 +260,21 @@ perform_kruskal <- function (op, var) {
 main <- function(){
   if(param.analysis.all) {
     
+    #TODO
     
     
   } else {
     # import project
-    ops <- ops.import('OneDrive')
-    
-    # plot group sizes
-    ops.groups.plot(ops)
+    ops <- ops.import(param.analysis.single)
     
     # select groups
     #
     # ops <- ops.groups.select(ops, n = 2)
-    ops <- ops.groups.select(ops, s = param.analysis.groups.size)
+    ops.sel <- ops.groups.select(ops, s = param.analysis.groups.minsize)
     
-    ops.ratios.simple.boxplot(ops)
-    ops.ratios.rel.boxplot(ops)
+    ops.ratios.simple.boxplot(ops.sel)
+    ops.ratios.rel.boxplot(ops.sel)
     }
-  
-  
 }
-
 
 main()
