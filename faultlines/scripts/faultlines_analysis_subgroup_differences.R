@@ -82,7 +82,6 @@ save.plot <- function(plot, name){
   dev.off()
 }
 
-
 ops.ratios.simple.boxplot <- function (ops){
   ops$group <- as.factor(ops$group)
   
