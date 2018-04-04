@@ -319,9 +319,10 @@ ops.calculate.ratios <- function(owner, dt_start, dt_end) {
     tech = get_count_technicals(owner, dt_start, dt_end)
   },
   error = function(err){
-    df = data.frame(no_issues_reported = c(0),
-                  no_pullrequests_requested = c(0),
-                  no_commits_committed = c(0))
+    df = data.frame(gha_id = c(-999),
+                    no_issues_reported = c(0),
+                    no_pullrequests_requested = c(0),
+                    no_commits_committed = c(0))
     return(df)
   })
 
@@ -675,16 +676,31 @@ ops.get <- function(owner, dt_start, dt_end) {
 main <- function () {
 
   skip = 140
+  remove = c(143)
   projects <- get_project_names()
+  
+  if(!is.na(remove)){
+    projects = data.frame(projects[-remove,])
+  }
+  
   if(!is.na(skip)){
-    projects = projects[skip+1:length(projects)]
+    skip= skip - length(remove)
+    projects = data.frame(names = projects[skip+1:nrow(projects),])
   }
   
   for (project in projects$names) {
+    ops = tryCatch({
       ops <- ops.get(project, 
                      param.analysis.dt_start, 
                      param.analysis.dt_end)
-    
+    },
+    error = function(err){
+      print(err)
+      print(project)
+      ops = NULL
+      return(ops)
+    })
+      
     if (!is.null(ops)) {
       file.path.var = paste("/home/rahnm/R/analysis/faultlines/variation/op_df_",
                             project,
