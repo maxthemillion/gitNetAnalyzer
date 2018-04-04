@@ -16,15 +16,41 @@ neo = startGraph("http://localhost:7474/db/data/",
 flog.threshold(INFO)
 flog.appender(appender.file('/home/rahnm/R/log/faultlines.log'))
 
-param.analysis.all = F # if T, all projects in the DB are being considered
-param.analysis.single = 'waffleio' # name of the project to analyze, if param.analysis.all == F
+##### parameters start #####
 
+## select projects to analyze
+# if param.analysis.all == T, all projects in the DB are being considered
+param.analysis.all = T
+# name of the project to analyze, if param.analysis.all == F
+param.analysis.single = 'waffleio' 
+
+## set analysis period
 param.analysis.dt_start = "2017-01-01"
 param.analysis.dt_end = "2017-08-01"
-param.analysis.period.length = 1 # period length in months
-param.analysis.active.min = 1 # defines how many contributions must be made in a period such that it counts as active
-param.analysis.core.min = 10 # defines how many contributions must be made in total such that a developer belongs to the core
 
+## set persistency parameters
+# period length in months
+param.analysis.period.length = 1 
+# no. of contributions. defines how many contributions must be made in a period 
+# such that it counts as active
+param.analysis.active.min = 1 
+
+## set dev_core parameters
+# rule for dev_core selection. If 'contributions', dev_core will be selected according to a minimum
+# number of contributions. If 'collaborators', dev_core will be selected according to the collaborator
+# status.
+param.analysis.dev_core.rule = "contributions"
+
+# rule for network selection. Can be 'both' or 'one' 
+# If 'both', source and target need to fulfill the dev_core criteria for the connection to be considered.
+# If 'one', just one of both needs to fulfill the criteria.
+param.analysis.filter.rule = "both"
+
+# number of contributions. defines how many contributions must be made in total 
+# such that a developer belongs to the dev_core
+param.analysis.dev_core.min = 5
+
+#### parameters end ####
 
 #' retrieves the comment subgraph per project
 #'   @param owner:      specific project
@@ -64,17 +90,15 @@ get_comment_subgraph <- function(owner, dt_start, dt_end) {
     dt_end
   )
   
-  df = is_core(df)
-  
   df = cypher(neo, query)
   return(df)
 }
 
-
-#' returns a list of core developers from the data base
-#' core criteria:
+#' returns a list of dev_core developers from the data base
+#' dev_core criteria:
 #'  developer has more than x contributions during total project lifetime
-get_core <- function(owner, proj_start){
+get_dev_core <- function(owner, proj_start){
+  if(param.analysis.dev_core.rule == "contributions"){
   query = sprintf("
       MATCH (o:OWNER{login: '%s'})
       WITH o
@@ -93,19 +117,33 @@ get_core <- function(owner, proj_start){
       WHERE count_contributions >= %s
       RETURN u_id as gha_id;",
       owner,
-      param.analysis.core.min
+      param.analysis.dev_core.min
       )
+  } else if(param.analysis.dev_core.rule == "collaborator"){
+    # TODO
+    query = sprintf("
+    MATCH (o:OWNER{login: '%s'})
+    WITH o
+    MATCH (u:USER)-[:becomes]->(node:COLLABORATOR)-[:to]->(:REPO)-[:belongs_to]->(o)
+                    
+    RETURN DISTINCT u.gha_id as gha_id;                    
+    ",
+    owner)
+  }
   
-  core = cypher(neo, query)
-  return(core)
+  dev_core = cypher(neo, query)
+  return(dev_core)
 }
 
-#' returns all core developers which appear in the provided data frame
-#' (filters sporadic contributions)
+#' returns all dev_core developers which appear in the provided data frame
+#' (filters sporadic contributors)
 #'
-filter_core <- function(df, core){
-  df = df[(df$source %in% core$gha_id && df$target %in% core$gha_id) ,]
-  
+filter_dev_core <- function(df, dev_core){
+  if(param.analysis.filter.rule == "both"){
+    df = df[(df$source %in% dev_core$gha_id & df$target %in% dev_core$gha_id) ,]
+  } else if(param.analysis.dev_core.rule == "one"){
+    df = df[(df$source %in% dev_core$gha_id | df$target %in% dev_core$gha_id) ,]
+  }
   return(df)
 }
 
@@ -166,12 +204,11 @@ get_count_technicals <- function(owner, dt_start, dt_end) {
       dt_start,
       dt_end
     )
-    
-    df = cypher(neo, query)
+  df = cypher(neo, query)
   
   df[is.na(df)] <- 0
   
-  df["total_technicals"] =
+  df$total_technicals =
     df$no_issues_reported +
     df$no_pullrequests_requested +
     df$no_commits_committed
@@ -214,9 +251,16 @@ get_count_comment_types <- function(owner, dt_start, dt_end) {
     dt_end
   )
   
-  df = cypher(neo, query)
+  df <- tryCatch({
+    df = cypher(neo, query)
+  },
+  error = function(err){
+    print(err)
+    df = data.frame(issue_comments = c(0), pullreq_comments = c(0), commit_comments = c(0))
+    return(df)
+  })
   
-  df["total_comments"] =
+  df$total_comments =
     df$issue_comments +
     df$pullreq_comments +
     df$commit_comments
@@ -271,7 +315,16 @@ get_collaborator_status <- function(owner, dt_start, dt_end){
 #'   @param dt_end:     end date
 #'   @return operationalization data frame
 ops.calculate.ratios <- function(owner, dt_start, dt_end) {
-  tech = get_count_technicals(owner, dt_start, dt_end)
+  tech = tryCatch({
+    tech = get_count_technicals(owner, dt_start, dt_end)
+  },
+  error = function(err){
+    df = data.frame(no_issues_reported = c(0),
+                  no_pullrequests_requested = c(0),
+                  no_commits_committed = c(0))
+    return(df)
+  })
+
   comment_types = get_count_comment_types(owner, dt_start, dt_end)
   
   df <- merge(x = tech,
@@ -285,7 +338,7 @@ ops.calculate.ratios <- function(owner, dt_start, dt_end) {
   # i.
   # ratio: code vs issue related activity
   # share of issue related activity in total activity per user
-  df[, "ratio_code_issue"] =
+  df$ratio_code_issue =
     (
       (df$no_issues_reported + df$issue_comments) 
       / 
@@ -296,13 +349,12 @@ ops.calculate.ratios <- function(owner, dt_start, dt_end) {
   # ratio: relative activity focus
   # share of issue related activity in total activity per user in relation to the overall project
   # ratio of issue to total activity.
-  df[, "ratio_rel_code_issue"] = (df$ratio_code_issue - mean(df$ratio_code_issue, na.rm = T))
-  df[, "ratio_rel_code_issue_sd"] = df$ratio_rel_code_issue / sd(df$ratio_code_issue, na.rm = T)
+  df$ratio_code_issue_sd = (df$ratio_code_issue - mean(df$ratio_code_issue, na.rm = T))/ sd(df$ratio_code_issue, na.rm = T)
   
   
   # iii.
   # ratio: code contributing vs code reviewing
-  df[, "ratio_code_review_contribution"] =
+  df$ratio_code_review_contribution =
     (
       (df$commit_comments + df$pullreq_comments) 
       /
@@ -312,30 +364,24 @@ ops.calculate.ratios <- function(owner, dt_start, dt_end) {
   
   # iv.
   # ratio: relative code contributions vs reviews
-  df[, "ratio_rel_code_review_contribution"] = 
-    df$ratio_code_review_contribution - mean(df$ratio_code_review_contribution, na.rm = T)
-  
-  df[, "ratio_rel_code_review_contribution_sd"] = 
-    df$ratio_rel_code_review_contribution / sd(df$ratio_code_review_contribution, na.rm = T)
+  df$ratio_code_review_contribution_sd = 
+    (df$ratio_code_review_contribution - mean(df$ratio_code_review_contribution, na.rm = T)) / sd(df$ratio_code_review_contribution, na.rm = T)
     
   
   # v.
   # ratio: issue reporting vs issue discussing
-  df[, "ratio_issue_reports_discussion"] =
+  df$ratio_issue_reports_discussion =
     (df$issue_comments / (df$issue_comments + df$no_issues_reported))
   
   # vi.
   # ratio: relative issue reporting vs issue discussing
-  df[, "ratio_rel_issue_reports_discussion"] =
-    (df$ratio_issue_reports_discussion) - mean(df$ratio_issue_reports_discussion, na.rm = T)
-  
-  df[, "ratio_rel_issue_reports_discussion_sd"] =
-    df$ratio_rel_issue_reports_discussion / sd(df$ratio_issue_reports_discussion, na.rm = T)
+  df$ratio_issue_reports_discussion_sd =
+    ((df$ratio_issue_reports_discussion) - mean(df$ratio_issue_reports_discussion, na.rm = T)) / sd(df$ratio_issue_reports_discussion, na.rm = T)
   
   
   # vii.
   # ratio: technical contribution vs discussion
-  df[, "ratio_technical_discussion"] =
+  df$ratio_technical_discussion =
     (
       df$total_technicals 
       / 
@@ -344,27 +390,54 @@ ops.calculate.ratios <- function(owner, dt_start, dt_end) {
   
   # viii.
   # ratio: relaltive technical contribution vs discussion
-  df[, "ratio_rel_technical_discussion"] =
-    (df$ratio_technical_discussion) - mean(df$ratio_technical_discussion, na.rm = T)
   
-  df[, "ratio_rel_technical_discussion_sd"] =
-    df$ratio_rel_technical_discussion / sd(df$total_technicals, na.rm = T)
+  df$ratio_technical_discussion_sd =
+    ((df$ratio_technical_discussion) - mean(df$ratio_technical_discussion, na.rm = T)) / sd(df$ratio_technical_discussion, na.rm = T)
+  
   
   #### 5 ###
   # i. total no. contributions p. period
-  df[, "contribution_extent"] = df$total_technicals + df$total_comments
+  total_contributions = df$total_technicals + df$total_comments
   
   # ii. individuals' share in total project contributions
-  df[, "share_contribution_extent"] = df$contribution_extent/sum(df$contribution_extent, na.rm = T)
-  
-  # ii. individuals' share in total project contributions (deviation from mean)
-  df[, "ratio_rel_contribution_extent"] = df$share_contribution_extent - mean(df$share_contribution_extent, na.rm = T)
+  df$contribution_extent = total_contributions/sum(total_contributions, na.rm = T)
   
   # ii. individuals' share in total project contributions (deviation from mean measured in sd's)
-  df[, "ratio_rel_contribution_extent_sd"] = df$ratio_rel_contribution_extent/sd(df$ratio_rel_contribution_extent, na.rm = T)
+  df$contribution_extent_sd = (df$contribution_extent - mean(df$contribution_extent, na.rm = T))/sd(df$contribution_extent, na.rm = T)
   
   return(df)
 }
+
+
+ops.calculate.network_measures <- function(graph_d){
+  
+  # undirected measures
+  # degree_centrality = degree(graph_d, mode = "all", normalized = T)         # Wassermann (1998) p. 178 ff
+  degree_centrality = strength(graph_d, mode = "all")/(vcount(graph_d)-1)
+  betweenness_centrality = betweenness(graph_d, directed = F, normalized = T) # Wassermann (1998) p. 188 ff
+  closeness_centrality = closeness(graph_d, mode = "all", normalized = T)     # Wassermann (1998) p. 183 ff
+  
+  # directed measures
+  degree_prestige = strength(graph_d, mode = "in")/(vcount(graph_d)-1) # Wassermann (1998) p. 202 ff
+  
+  # proximity prestige : no. reachable nodes normalized by group size to average distance of reachable nodes 
+  dist = distances(graph_d, mode="in", weights = NA)
+  dist[is.infinite(dist)] <- 0 
+  
+  I = dist
+  I[I>0] <- 1
+  I = apply(I, 2, sum)
+  
+  proximity_prestige = ((I/(vcount(graph_d)-1))/(apply(dist, 2, sum)/I))
+  
+  return(data.frame(gha_id = V(graph_d)$name,
+                    degree_centrality = degree_centrality,
+                    betweenness_centrality = betweenness_centrality,
+                    closeness_centrality = closeness_centrality,
+                    degree_prestige = degree_prestige,
+                    proximity_prestige = proximity_prestige))
+}
+
 
 #' get date of first contribution to the project
 #'
@@ -499,12 +572,12 @@ get_persistency <- function(owner, dt_start, dt_end, proj_start){
   
   temp$periods_since_first = ceiling(interval(temp$min_date, ymd(dt_end))/months(param.analysis.period.length))
   
-  active$persistency_simple = temp$sum.active / temp$periods_since_first
-  active$persistency_deviation = active$persistency_simple - mean(active$persistency_simple, na.rm = T)
-  active$persistency_sd = active$persistency_deviation/sd(active$persistency_deviation, na.rm = T)
+  active$persistency = temp$sum.active / temp$periods_since_first
+  active$persistency_sd = (active$persistency - mean(active$persistency, na.rm = T))/sd(active$persistency, na.rm = T)
   
   # calculate the share of active periods in periods since the project start (experience)
   active$proj_experience = active$sum.active/periods_passed 
+  active$proj_experience_sd = (active$proj_experience - mean(active$proj_experience))/sd(active$proj_experience, na.rm = T) 
          
 return(active)
 }
@@ -516,20 +589,23 @@ return(active)
 #'   @param op:     operationalization data frame
 #'   @param c:      igraph communities object
 #'   @return merged data frame including group information per user
-ops.assemble <- function(ratios, communities, graph, collabs, persistency) {
-  
-  # add community information to ratios
-  com <- cbind(V(graph)$name, communities$membership)
-  com <- setNames(as.data.frame(com), c("gha_id", "group"))
-  df = merge(x = ratios, y = com, by = "gha_id", all.y = T)
-  
-  # add collaborator status to ratios
+ops.assemble <- function(communities, ratios, collabs, persistency, network_measures) {
+    df = merge(x = communities, y = ratios, by = "gha_id", all.x = T)
+  df = merge(x = df, y = network_measures, by = "gha_id", all.x = T)
   df[, 'collaborator_status'] = df$gha_id %in% collabs$gha_id
-  
-  # add persistency information
   df = merge(x = df, y = persistency, by = "gha_id", all.x = T)
   
   return (df)
+}
+
+#'
+#'
+#'
+get_communities <- function(graph_u){
+  communities = cluster_louvain(graph_u)  
+  com <- cbind(V(graph_u)$name, communities$membership)
+  com <- setNames(as.data.frame(com), c("gha_id", "group"))
+  return(com)
 }
 
 #' toggles the operationalizations construction process
@@ -550,29 +626,45 @@ ops.get <- function(owner, dt_start, dt_end) {
     # get the project start date
     proj_start = get_proj_start(owner)
     
-    # get the core team
-    core = get_core(owner)
+    # get the dev_core team
+    dev_core = get_dev_core(owner)
     
-    # filter sporadic contributors and continue with core team data
-    comments = filter_core(comments, core)
+    # filter sporadic contributors and continue with dev_core team data
+    comments = filter_dev_core(comments, dev_core)
     
-    # create directed graph from comment relations
-    graph = graph_from_data_frame(comments, directed = F)
+    # create an undirected graph from comment relations for clustering
+    graph_u = graph_from_data_frame(comments, directed = F)
+    communities = get_communities(graph_u)
     
-    # cluster the graph
-    communities = cluster_louvain(graph)
+    # get network measures
+    graph_d = graph_from_data_frame(comments, directed = T)
+    network_measures = ops.calculate.network_measures(graph_d)
     
-    # get the ratios
+    # get ratios
     ratios = ops.calculate.ratios(owner, dt_start, dt_end)
     
     # get the contributor status
-    collabs = get_collaborator_status(owner, dt_start, dt_end)
+    collaborators = get_collaborator_status(owner, dt_start, dt_end)
     
     # get contribution persistency
     persistency = get_persistency(owner, dt_start, dt_end, proj_start)
     
     # merge ratios, community information, persistency and collaborator status
-    ops = ops.assemble(ratios, communities, graph, collabs, persistency)
+    res <- tryCatch({  
+      ops = ops.assemble(communities = communities, 
+                         ratios = ratios, 
+                         collabs = collaborators,
+                         persistency = persistency, 
+                         network_measures = network_measures)
+    },
+    error = function(err){
+      print(err)
+      ops = NULL
+      return (ops)
+    })
+    
+    ops = res
+    
   } else {
     ops = NULL
   }
@@ -582,8 +674,11 @@ ops.get <- function(owner, dt_start, dt_end) {
 #' saves an operationalizations csv file per project
 main <- function () {
 
-  
+  skip = 140
   projects <- get_project_names()
+  if(!is.na(skip)){
+    projects = projects[skip+1:length(projects)]
+  }
   
   for (project in projects$names) {
       ops <- ops.get(project, 

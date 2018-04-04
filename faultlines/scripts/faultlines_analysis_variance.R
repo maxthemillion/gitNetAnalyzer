@@ -21,6 +21,10 @@ param.plot.units = "cm"
 
 param.ops.import = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/variation"
 
+old <- theme_set(theme_gray())
+theme_update(axis.title = element_text(size = rel(0.65)))
+theme_update(axis.text = element_text(size = rel(0.5)))
+
 # --- define functions
 
 #' import operationalization csv files and coerce them if more than one is being imported
@@ -45,101 +49,97 @@ coerce.ratios <- function(f = NULL) {
   }
   
   l.a_focus.simple = list()
-  l.a_focus.rel = list()
-  l.a_focus.rel.sd = list()
+  l.a_focus.sd = list()
   l.experience = list()
   l.a_level = list()
+  l.reputation = list()
   
   i = 1
   for (file in file.list) {
     ops <- read.csv(file)
     
     l.a_focus.simple[[i]] = get.a_focus.r_simple(ops)
-    l.a_focus.rel[[i]] = get.a_focus.r_rel(ops)
-    l.a_focus.rel.sd[[i]] = get.a_focus.r_sd(ops)
+    l.a_focus.sd[[i]] = get.a_focus.r_sd(ops)
     l.experience[[i]] = get.experience(ops) 
     l.a_level[[i]] = get.a_level(ops)
+    l.reputation[[i]] = get.reputation(ops)
     
     i = i + 1
   }
   
   ops.all = list()
   
-  ops.all$a_focus.r_simple = rbindlist(l.a_focus.simple)
-  ops.all$a_focus.r_rel = rbindlist(l.a_focus.rel)
-  ops.all$a_focus.r_sd = rbindlist(l.a_focus.rel.sd)
+  ops.all$a_focus.simple = rbindlist(l.a_focus.simple)
+  ops.all$a_focus.sd = rbindlist(l.a_focus.sd)
   ops.all$a_level = rbindlist(l.a_level)
   ops.all$experience = rbindlist(l.experience)
+  ops.all$reputation = rbindlist(l.reputation)
+  
   return(ops.all)
 }
 
 #' separates simple ratios from ops data frame
 #' @param ops: operationalizations data frame
 #' @return data.frame containing simple ops ratios
-get.a_focus.r_simple <- function(ops) {
-  ops.a_focus.r_simple <- as.data.frame(
+get.a_focus.simple <- function(ops) {
+  ops.a_focus.simple <- as.data.frame(
     cbind(
-      r_code_issue = ops$ratio_code_issue,
-      r_code_review_contribution = ops$ratio_code_review_contribution,
-      r_issue_reports_discussion = ops$ratio_issue_reports_discussion,
-      r_technical_discussion = ops$ratio_technical_discussion
+      code_issue = ops$ratio_code_issue,
+      code_review_contribution = ops$ratio_code_review_contribution,
+      issue_reports_discussion = ops$ratio_issue_reports_discussion,
+      technical_discussion = ops$ratio_technical_discussion
     )
   )
-  return (ops.a_focus.r_simple)
+  return (ops.a_focus.simple)
 }
 
-#' separates relative ratios from ops data frame
-#' @param ops: operationalizations data frame
-#' @return data.frame containing relative ops
-get.a_focus.r_rel <- function(ops) {
-  ops.a_focus.r_rel <- as.data.frame(
+#' separates standardized relative activity focus ratios from op df
+#'
+#'
+get.a_focus.sd <- function(ops) {
+  ops.a_focus.sd <- as.data.frame(
     cbind(
-      r_rel_code_issue = ops$ratio_rel_code_issue,
-      r_rel_code_review_contribution = ops$ratio_rel_code_review_contribution,
-      r_rel_issue_reports_discussion = ops$ratio_rel_issue_reports_discussion,
-      r_rel_technical_discussion = ops$ratio_rel_technical_discussion
-    )
-  )
-  
-  return (ops.a_focus.r_rel)
-}
-
-#'
-#'
-#'
-get.a_focus.r_sd <- function(ops) {
-  ops.a_focus.r_sd <- as.data.frame(
-    cbind(
-      r_rel_code_issue = ops$ratio_rel_code_issue_sd,
-      r_rel_code_review_contribution = ops$ratio_rel_code_review_contribution_sd,
-      r_rel_issue_reports_discussion = ops$ratio_rel_issue_reports_discussion_sd,
-      r_rel_technical_discussion = ops$ratio_rel_technical_discussion_sd
+      code_issue = ops$ratio_code_issue_sd,
+      code_review_contribution = ops$ratio_code_review_contribution_sd,
+      issue_reports_discussion = ops$ratio_issue_reports_discussion_sd,
+      technical_discussion = ops$ratio_technical_discussion_sd
     )
   )
   
   return (ops.a_focus.r_sd)
 }
 
-#'
+#' separates activity level ratios from op df
 #'
 #'
 get.a_level <- function(ops){
-  ops.a_level <- as.data.frame(cbind(persistency_simple = ops$persistency_simple,
-                                     persistency_deviation = ops$persistency_deviation,
+  ops.a_level <- as.data.frame(cbind(persistency = ops$persistency,
                                      persistency_sd = ops$persistency_sd,
-                                     extent_simple = ops$contribution_extent,
-                                     extent_share = ops$share_contribution_extent,
-                                     r_rel_extent = ops$ratio_rel_contribution_extent,
-                                     r_rel_extent_sd = ops$ratio_rel_contribution_extent_sd))
+                                     extent= ops$contribution_extent,
+                                     extent_sd = ops$contribution_extent_sd))
   
   return(ops.a_level)
 }
 
-#'
+#' separates experience measures from op df
 #'
 #'
 get.experience <- function(ops){
-  ops.experience <- as.data.frame(ops$proj_experience) 
+  ops.experience <- as.data.frame(cbind(proj_experience = ops$proj_experience,
+                                    proj_experience_sd = ops$proj_experience_sd))
+}
+
+
+#' separates reputation measures from op df
+#'
+#'
+get.reputation <- function(ops){
+  ops.reputation <- data.frame(degree_centrality = ops$degree_centrality,
+                               betweenness_centrality = ops$betweenness_centrality,
+                               closeness_centrality = ops$closeness_centrality,
+                               degree_prestige = ops$degree_prestige,
+                               proximity_prestige = ops$proximity_prestige)
+  return(ops.reputation)
 }
 
 #' calculates column variances for the provided data frame
@@ -195,15 +195,22 @@ save.plot <- function(plot, name){
 
 #' creates a boxplot for the simple activity focus ratios 
 #' @param ops.ratio.simple
-ops.boxplot.a_focus.r_simple <- function(ops.ratios.simple) {
+ops.boxplot.a_focus.simple <- function(ops.ratios.simple) {
   
   vec <- ops.vectorize(ops.ratios.simple)
+  
+  no.obs.1 <- nrow(vec[vec$cat == 1,])
+  no.obs.2 <- nrow(vec[vec$cat == 2,])
+  no.obs.3 <- nrow(vec[vec$cat == 3,])
+  no.obs.4 <- nrow(vec[vec$cat == 4,])
+  
   
   p <- ggplot(vec, aes( x = cat, y = val)) + 
     geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
     xlab("ratios") +
     ylab("ratio value") +
-    ggtitle("Distribution of simple activity focus ratios") +
+    labs(title = "Distribution of simple activity focus ratios",
+         subtitle = paste("No. observations:", no.obs.1, no.obs.2, no.obs.3, no.obs.4, sep = " ")) +
     theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1)) +
     scale_x_discrete(labels=c(
       "1" = "code v issue \n activity", 
@@ -217,9 +224,9 @@ ops.boxplot.a_focus.r_simple <- function(ops.ratios.simple) {
 #' creates a boxplot for the relative activity focus ratios
 #' if parameter param.plot.beanplot is set to TRUE, boxplot is generated as beanplot
 #' @param ops.ratios.rel
-ops.boxplot.a_focus.r_rel <- function(ops.a_focus.r_rel) {
-
-  vec <- ops.vectorize(ops.a_focus.r_rel)
+ops.boxplot.a_focus.sd <- function(ops.a_focus.sd){
+  
+  vec <- ops.vectorize(ops.a_focus.sd)
   
   no.obs.1 <- nrow(vec[vec$cat == 1,])
   no.obs.2 <- nrow(vec[vec$cat == 2,])
@@ -227,38 +234,12 @@ ops.boxplot.a_focus.r_rel <- function(ops.a_focus.r_rel) {
   no.obs.4 <- nrow(vec[vec$cat == 4,])
   
   p <- ggplot(vec, aes( x = cat, y = val )) + 
-    #geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
+    #geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
     geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
     xlab("ratios") +
     ylab("ratio value") +
-    labs(title = "Distribution of relative activity focus ratios",
-         subtitle = paste("No. observations:", no.obs.1, no.obs.2, no.obs.3, no.obs.4, sep = "\t")) +
-    theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1)) +
-    scale_x_discrete(labels=c(
-      "1" = "code v issue \n activity", 
-      "2" = "code reviewing v\n contributing",
-      "3" = "issue reporting v\n discussing",
-      "4" = "tech. contributing v\n discussing")) 
-  
-  save.plot(p, "boxplot_ops_ratios_rel.png")
-}
-ops.boxplot.a_focus.r_sd <- function(ops.a_focus.r_sd){
-  no.obs = nrow(ops.a_focus.r_sd)
-  
-  vec <- ops.vectorize(ops.a_focus.r_sd)
-  
-  no.obs.1 <- nrow(vec[vec$cat == 1,])
-  no.obs.2 <- nrow(vec[vec$cat == 2,])
-  no.obs.3 <- nrow(vec[vec$cat == 3,])
-  no.obs.4 <- nrow(vec[vec$cat == 4,])
-  
-  p <- ggplot(vec, aes( x = cat, y = val )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    # geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    xlab("ratios") +
-    ylab("ratio value") +
-    labs(title = "Distribution of standardized relative activity focus ratios", 
-         subtitle = paste("No. observations:", no.obs.1, no.obs.2, no.obs.3, no.obs.4, sep = "\t")) +
+    labs(title = "Distribution of standardized activity focus ratios", 
+         subtitle = paste("No. observations:", no.obs.1, no.obs.2, no.obs.3, no.obs.4, sep = " ")) +
     theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1)) +
     scale_x_discrete(labels=c(
       "1" = "code v issue \n activity", 
@@ -283,39 +264,24 @@ ops.boxplot.a_level.extent <- function(ops.a_level){
   )
   
   # plot simple extent
-  p1 <- ggplot(ops.a_level, aes( x = "activity extent", y = ops.a_level$extent_simple )) + 
+  p1 <- ggplot(ops.a_level, aes( x = "1", y = extent )) + 
     geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
     #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
     xlab(" ") +
-    ylab("total number of contributions per participator") +
-    labs(subtitle = "simple") 
+    ylab("share of individual contributions in total project contributions") +
+    scale_x_discrete(labels=c("1" = "activity extent\nsimple ratio"))
   
-  # plot share extent
-  p2 <-  ggplot(ops.a_level, aes( x = "activity extent", y = ops.a_level$extent_share )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
-    #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    xlab("") +
-    ylab("individuals' share in total project contributions") +
-    labs(subtitle = "share") 
-  
-  # plot relative extent
-  p3 <-  ggplot(ops.a_level, aes( x = "activity extent", y = ops.a_level$r_rel_extent )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
-    #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    xlab("") +
-    ylab("deviation from project mean in percentage points") +
-    labs(subtitle = "relative share") 
     
   # plot standardized relative extent
-  p4 <- ggplot(ops.a_level, aes( x = "activity extent", y = ops.a_level$r_rel_extent_sd )) + 
+  p2 <- ggplot(ops.a_level, aes( x = "1", y = extent_sd )) + 
     geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
     #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
     xlab(" ") +
-    ylab("deviation from project mean in standard deviations") +
-    labs(subtitle = "standardized relative share") 
+    ylab("deviation from project mean in sd") +
+    scale_x_discrete(labels=c("1" = "activity extent\nstandardized deviation from mean"))
   
   # grid.arrange(p1, p2, p3, p4, ncol = 4, top = "Distribution of activity extent")
-  grid.arrange(p1, p4, ncol = 2, top = "Distribution of activity extent")
+  grid.arrange(p1, p2, ncol = 2, top = "Distribution of activity extent")
   
   dev.off()
 }
@@ -333,45 +299,74 @@ ops.boxplot.a_level.persistency <- function(ops.a_level){
     units = param.plot.units
   )
   
-  p1 <- ggplot(ops.a_level, aes( x = "activity persistency", y = ops.a_level$persistency_simple )) + 
+  p1 <- ggplot(ops.a_level, aes( x = "1", y = ops.a_level$persistency)) + 
     geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
     #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    xlab("individuals' share of active periods since first contribution") +
-    ylab("") +
-    labs(subtitle = "simple") 
-  
-  p2 <- ggplot(ops.a_level, aes( x = "activity persistency", y = ops.a_level$persistency_deviation )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
-    #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    xlab(" ") +
-    ylab("deviation from mean in percentage points") +
-    labs(subtitle = "deviation from mean") 
-  
-  p3 <- ggplot(ops.a_level, aes( x = "activity persistency", y = ops.a_level$persistency_sd )) + 
+    xlab("") +
+    ylab("share of active periods in periods since first contribution") +
+    scale_x_discrete(labels=c( "1" = "activity persistency\nsimple ratio"))
+      
+
+  p3 <- ggplot(ops.a_level, aes( x = "1", y = ops.a_level$persistency_sd )) + 
     geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
     #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
     xlab(" ") +
-    ylab("deviation from mean in sd's") +
-    labs(subtitle = "standardized deviation from mean") 
-  
+    ylab("deviation from project mean in sd's") +
+    scale_x_discrete(labels=c( "1" = "activity persistency\nstandardized deviation from mean"))
   
   # grid.arrange(p1, p2, p3, ncol = 3, top = "Distribution of activity persistency")
-  grid.arrange(p1, p3, ncol = 2, top = "Distribution of activity persistency")
+  grid.arrange(p1, p3, ncol = 2, 
+               top = "Distribution of activity persistency")
   
   dev.off()
-
 }
 
-#' creates a pairplot for the relative activity ratios
-ops.pairplot.rel <- function(ops.ratios.rel) {
+#'
+#'
+#'
+ops.boxplot.reputation <- function(ops.reputation){
+
   png(
-    filename = paste(param.plot.exp, "pairplot_ops_rel.png", sep = ""),
+    filename = paste(param.plot.exp, "boxplot_reputation.png", sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
     units = param.plot.units
   )
-  pairs(ops.ratios.rel)
+  
+  p1 <- ggplot(ops.reputation, aes( x = "1" , y = ops.reputation$degree_centrality )) + 
+    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
+    # geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+    xlab(" ") +
+    ylab(" ") +
+    scale_x_discrete(labels=c("1" = "degree centrality\nnorm. by g-1"))
+  
+  p2 <- ggplot(ops.reputation, aes( x = "1" , y = ops.reputation$betweenness_centrality )) + 
+    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
+    # geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+    xlab(" ") +
+    ylab(" ") +
+    scale_x_discrete(labels=c("1" = "betweenness centrality\nnorm. by g-1"))
+
+  
+  p3 <- ggplot(ops.reputation, aes( x = "1" , y = ops.reputation$closeness_centrality )) + 
+    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
+    # geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+    xlab(" ") +
+    ylab(" ") +
+    scale_x_discrete(labels=c("1" = "closeness centrality\nnorm. by g-1"))
+  
+  
+  p4 <- ggplot(ops.reputation, aes( x = "1" , y = ops.reputation$proximity_prestige )) + 
+    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE)+
+    # geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+    xlab(" ") +
+    ylab(" ") +
+    scale_x_discrete(labels=c("1" = "proximity prestige\n "))
+  
+  
+  grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2, top = "Distribution of reputation measures")
+  
   dev.off()
   
 }
@@ -457,17 +452,14 @@ ops.test.var.print <- function(res){
 ops.all = coerce.ratios()
 
 # plot the variables
-ops.boxplot.a_focus.r_simple(ops.all$a_focus.r_simple)
-ops.boxplot.a_focus.r_rel(ops.all$a_focus.r_rel)
-ops.boxplot.a_focus.r_sd(ops.all$a_focus.r_sd)
+ops.boxplot.a_focus.simple(ops.all$a_focus.simple)
+ops.boxplot.a_focus.sd(ops.all$a_focus.sd)
 
 ops.boxplot.a_level.extent(ops.all$a_level)
 ops.boxplot.a_level.persistency(ops.all$a_level)
 
-# ops.pairplot.simple(ops.all$a_focus.r_simple)
-# ops.pairplot.rel(ops.all$a_focus.r_sd)
+ops.boxplot.reputation(ops.all$reputation)
 
 # test variances
-ops.test.var.print(ops.test.var(ops.all$a_focus.r_simple))
-ops.test.var.print(ops.test.var(ops.all$a_focus.r_rel))
-ops.test.var.print(ops.test.var(ops.all$a_focus.r_sd))
+ops.test.var.print(ops.test.var(ops.all$a_focus.simple))
+ops.test.var.print(ops.test.var(ops.all$a_focus.sd))
