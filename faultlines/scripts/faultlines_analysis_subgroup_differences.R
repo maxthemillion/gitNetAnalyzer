@@ -4,9 +4,9 @@ library(plyr)
 library(ggplot2)
 library(gridExtra)
 
-param.analysis.all = FALSE                      # specifies, whether all or only a single project should be imported and analysed
+param.analysis.all = F                          # specifies, whether all or only a single project should be imported and analysed
 param.analysis.single = 'waffleio'              # name of a project which should be imported, when param.analysis.all = F
-param.analysis.groups.minsize = 10              # min group size which qualifies for further analysis
+param.analysis.groups.minsize = 0               # min group size which qualifies for further analysis
 param.analysis.groups.includeResiduals = TRUE   # if T, all remaining groups which are smaller than the specified minsize will be aggregated and analyzed as well
 
 param.plot.res = 300
@@ -82,106 +82,6 @@ save.plot <- function(plot, name){
   dev.off()
 }
 
-ops.ratios.simple.boxplot <- function (ops){
-  ops$group <- as.factor(ops$group)
-  
-  old <- theme_set(theme_gray())
-  theme_update(axis.title = element_text(size = rel(0.65)))
-  theme_update(axis.text = element_text(size = rel(0.5)))
-  
-  if(!param.analysis.all){
-    title = "Distribution of simple activity ratios"
-  }else{
-    title = paste("Distribution of simple activity ratios\n project ", param.analysis.single)
-  }
-  
-  png(
-    filename = paste(param.plot.exp, "boxplot_ops_ratios_simple_per_group.png", sep = ""),
-    res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
-    units = param.plot.units
-  )
-  
-  p1 <- ggplot(ops, aes( x = group, y = ratio_code_issue )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    ylab("code vs issue activity") +
-    ylim(0,1)
-    
-  
-  p2 <- ggplot(ops, aes( x = group, y = ratio_code_review_contribution )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    ylab("code reviewing vs contributing") +
-    ylim(0,1)
-  
-  p3 <- ggplot(ops, aes( x = group, y = ratio_issue_reports_discussion )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    ylab("issue reporting vs discussing") +
-    ylim(0,1)
-  
-  
-  p4 <- ggplot(ops, aes( x = group, y = ratio_technical_discussion )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    ylab("code contributions vs commenting") +
-    ylim(0,1)
-  
-  grid.arrange(p1, p2, p3, p4, top = title)
-  
-  dev.off()
-}
-
-ops.ratios.rel.boxplot <-function (ops){
-  ops$group <- as.factor(ops$group)
-  
-  old <- theme_set(theme_gray())
-  theme_update(axis.title = element_text(size = rel(0.65)))
-  theme_update(axis.text = element_text(size = rel(0.5)))
-  
-  if(!param.analysis.all){
-    title = "Distribution of relative activity ratios"
-  }else{
-    title = paste("Distribution of relative activity ratios\n project ", param.analysis.single)
-  }
-  
-  png(
-    filename = paste(param.plot.exp, "boxplot_ops_ratios_rel_per_group.png", sep = ""),
-    res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
-    units = param.plot.units
-  )
-  
-  p1 <- ggplot(ops, aes( x = group, y = ratio_rel_code_issue )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    ylab("code vs issue activity") +
-    ylim(0, 1.5) +
-    geom_hline(yintercept=1, linetype="dashed", color = "red")
-  
-  
-  p2 <- ggplot(ops, aes( x = group, y = ratio_rel_code_review_contribution )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    ylab("code reviewing vs contributing") +
-    ylim(0,2.5) +
-    geom_hline(yintercept=1, linetype="dashed", color = "red")
-  
-  
-  p3 <- ggplot(ops, aes( x = group, y = ratio_rel_issue_reports_discussion )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    ylab("issue reporting vs discussing") +
-    ylim(0,1.5)+
-    geom_hline(yintercept=1, linetype="dashed", color = "red")
-  
-  
-  p4 <- ggplot(ops, aes( x = group, y = ratio_rel_technical_discussion )) + 
-    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
-    ylab("commenting vs contributing") +
-    ylim(0,2.5) +    
-    geom_hline(yintercept=1, linetype="dashed", color = "red")
-  
-  grid.arrange(p1, p2, p3, p4, top = title)
-  
-  dev.off()
-}
 
 #' performs an anova for the specified variable and tests anova assumptions
 #'

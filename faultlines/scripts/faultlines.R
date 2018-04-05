@@ -430,15 +430,15 @@ ops.calculate.network_measures <- function(graph_d){
   I = apply(I, 2, sum)
   
   proximity_prestige = ((I/(vcount(graph_d)-1))/(apply(dist, 2, sum)/I))
+  proximity_prestige_sd = (proximity_prestige - mean(proximity_prestige, na.rm = T))/sd(proximity_prestige, na.rm = T)
   
   return(data.frame(gha_id = V(graph_d)$name,
                     degree_centrality = degree_centrality,
                     betweenness_centrality = betweenness_centrality,
                     closeness_centrality = closeness_centrality,
                     degree_prestige = degree_prestige,
-                    proximity_prestige = proximity_prestige))
+                    proximity_prestige = proximity_prestige_sd))
 }
-
 
 #' get date of first contribution to the project
 #'

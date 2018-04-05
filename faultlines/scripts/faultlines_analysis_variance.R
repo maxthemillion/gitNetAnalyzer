@@ -8,11 +8,14 @@ library(data.table)
 library(EnvStats)
 library(ggplot2)
 library(gridExtra)
+library(plyr)
 
 # parameters:
 param.analysis.sample = F
 param.analysis.sample.size = 100
 
+param.plot.ops = F
+param.plot.ind = T
 param.plot.res = 300
 param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
 param.plot.width = 12
@@ -20,6 +23,17 @@ param.plot.height = 12
 param.plot.units = "cm"
 
 param.ops.import = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/variation"
+
+param.threshold.code_issue_sd = 0
+param.threshold.code_review_contribution_sd = 0
+param.threshold.issue_reports_discussion_sd = 0
+param.threshold.technical_discussion_sd = 0 
+
+param.threshold.persistency_sd = 0
+param.threshold.extent_sd = 0
+param.threshold.proximity_prestige = 0
+param.threshold.experience_sd = 0
+
 
 old <- theme_set(theme_gray())
 theme_update(axis.title = element_text(size = rel(0.65)))
@@ -53,17 +67,18 @@ coerce.ratios <- function(f = NULL) {
   l.experience = list()
   l.a_level = list()
   l.reputation = list()
+  l.project = list()
   
   i = 1
   for (file in file.list) {
     ops <- read.csv(file)
     
-    l.a_focus.simple[[i]] = get.a_focus.r_simple(ops)
-    l.a_focus.sd[[i]] = get.a_focus.r_sd(ops)
-    l.experience[[i]] = get.experience(ops) 
-    l.a_level[[i]] = get.a_level(ops)
-    l.reputation[[i]] = get.reputation(ops)
-    
+    l.a_focus.simple[[i]] = get.a_focus.simple(ops, i)
+    l.a_focus.sd[[i]] = get.a_focus.sd(ops, i)
+    l.experience[[i]] = get.experience(ops, i) 
+    l.a_level[[i]] = get.a_level(ops, i)
+    l.reputation[[i]] = get.reputation(ops, i)
+
     i = i + 1
   }
   
@@ -75,19 +90,25 @@ coerce.ratios <- function(f = NULL) {
   ops.all$experience = rbindlist(l.experience)
   ops.all$reputation = rbindlist(l.reputation)
   
+  ops.all$a_level$project = as.factor(ops.all$a_level$project)
+  ops.all$a_focus.sd$project = as.factor(ops.all$a_focus.sd$project)
+  ops.all$experience$project = as.factor(ops.all$experience$project)
+  ops.all$reputation$project = as.factor(ops.all$reputation$project)
+  
   return(ops.all)
 }
 
 #' separates simple ratios from ops data frame
 #' @param ops: operationalizations data frame
 #' @return data.frame containing simple ops ratios
-get.a_focus.simple <- function(ops) {
+get.a_focus.simple <- function(ops, i) {
   ops.a_focus.simple <- as.data.frame(
     cbind(
       code_issue = ops$ratio_code_issue,
       code_review_contribution = ops$ratio_code_review_contribution,
       issue_reports_discussion = ops$ratio_issue_reports_discussion,
-      technical_discussion = ops$ratio_technical_discussion
+      technical_discussion = ops$ratio_technical_discussion,
+      project = rep(i, times = nrow(ops))
     )
   )
   return (ops.a_focus.simple)
@@ -96,27 +117,30 @@ get.a_focus.simple <- function(ops) {
 #' separates standardized relative activity focus ratios from op df
 #'
 #'
-get.a_focus.sd <- function(ops) {
+get.a_focus.sd <- function(ops, i) {
   ops.a_focus.sd <- as.data.frame(
     cbind(
       code_issue = ops$ratio_code_issue_sd,
       code_review_contribution = ops$ratio_code_review_contribution_sd,
       issue_reports_discussion = ops$ratio_issue_reports_discussion_sd,
-      technical_discussion = ops$ratio_technical_discussion_sd
+      technical_discussion = ops$ratio_technical_discussion_sd,
+      project = rep(i, times = nrow(ops))
     )
   )
   
-  return (ops.a_focus.r_sd)
+  return (ops.a_focus.sd)
 }
 
 #' separates activity level ratios from op df
 #'
 #'
-get.a_level <- function(ops){
+get.a_level <- function(ops, i){
   ops.a_level <- as.data.frame(cbind(persistency = ops$persistency,
                                      persistency_sd = ops$persistency_sd,
                                      extent= ops$contribution_extent,
-                                     extent_sd = ops$contribution_extent_sd))
+                                     extent_sd = ops$contribution_extent_sd,
+                                     project = rep(i, times = nrow(ops))
+  ))
   
   return(ops.a_level)
 }
@@ -124,21 +148,25 @@ get.a_level <- function(ops){
 #' separates experience measures from op df
 #'
 #'
-get.experience <- function(ops){
+get.experience <- function(ops, i){
   ops.experience <- as.data.frame(cbind(proj_experience = ops$proj_experience,
-                                    proj_experience_sd = ops$proj_experience_sd))
+                                    proj_experience_sd = ops$proj_experience_sd,
+                                    project = rep(i, times = nrow(ops))
+  ))
 }
 
 
 #' separates reputation measures from op df
 #'
 #'
-get.reputation <- function(ops){
+get.reputation <- function(ops, i){
   ops.reputation <- data.frame(degree_centrality = ops$degree_centrality,
                                betweenness_centrality = ops$betweenness_centrality,
                                closeness_centrality = ops$closeness_centrality,
                                degree_prestige = ops$degree_prestige,
-                               proximity_prestige = ops$proximity_prestige)
+                               proximity_prestige = ops$proximity_prestige,
+                               project = rep(i, times = nrow(ops))
+  )
   return(ops.reputation)
 }
 
@@ -197,7 +225,7 @@ save.plot <- function(plot, name){
 #' @param ops.ratio.simple
 ops.boxplot.a_focus.simple <- function(ops.ratios.simple) {
   
-  vec <- ops.vectorize(ops.ratios.simple)
+  vec <- ops.vectorize(ops.ratios.simple[,1:4])
   
   no.obs.1 <- nrow(vec[vec$cat == 1,])
   no.obs.2 <- nrow(vec[vec$cat == 2,])
@@ -208,7 +236,7 @@ ops.boxplot.a_focus.simple <- function(ops.ratios.simple) {
   p <- ggplot(vec, aes( x = cat, y = val)) + 
     geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
     xlab("ratios") +
-    ylab("ratio value") +
+    ylab("deviation from project mean in standard deviations") +
     labs(title = "Distribution of simple activity focus ratios",
          subtitle = paste("No. observations:", no.obs.1, no.obs.2, no.obs.3, no.obs.4, sep = " ")) +
     theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1)) +
@@ -226,7 +254,7 @@ ops.boxplot.a_focus.simple <- function(ops.ratios.simple) {
 #' @param ops.ratios.rel
 ops.boxplot.a_focus.sd <- function(ops.a_focus.sd){
   
-  vec <- ops.vectorize(ops.a_focus.sd)
+  vec <- ops.vectorize(ops.a_focus.sd[,1:4])
   
   no.obs.1 <- nrow(vec[vec$cat == 1,])
   no.obs.2 <- nrow(vec[vec$cat == 2,])
@@ -386,6 +414,51 @@ ops.pairplot.simple <- function(ops.ratios.simple) {
   dev.off()
 }
 
+#'
+#'
+#'
+ops.scatterplot.a_level.sd <- function(ops.a_level.sd){
+  p <- ggplot(ops.a_level.sd, aes(x = persistency_sd, y = extent_sd)) +
+    geom_point(na.rm = TRUE, alpha = 1/20, size = 1) +
+    labs(title="Activity level dimensions",
+         subtitle = "deviation from mean in sd") +
+    ylab("contribution extent") +
+    xlab("contribution persistency") +
+    geom_hline(aes(yintercept=0), colour="grey", linetype="dashed") +
+    geom_vline(aes(xintercept=0), colour="grey", linetype="dashed") +
+    ylim(-5, 30)+
+    xlim(-3, 6)
+    
+  save.plot(p, 'scatterplot_a_level.png')
+}
+
+#'
+#'
+#'
+projects.boxplot.a_level.sd <- function(ops.a_level.sd){
+  sample.size = 50
+  data.sample = sample((1:length(unique(ops.a_level.sd$project))), sample.size)
+  
+  plot.data = ops.a_level.sd[ops.a_level.sd$project %in% data.sample]
+
+  p <- ggplot(plot.data, aes(x = project, y = persistency_sd)) +
+    geom_hline(aes(yintercept= -1), colour="grey", linetype="dashed") +
+    geom_hline(aes(yintercept= 0), colour="black") +
+    geom_hline(aes(yintercept= 1), colour="grey", linetype="dashed") +
+    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=0.2, notch=FALSE) +
+    theme(axis.text.x=element_blank(),
+          axis.ticks.x=element_blank())+
+    theme(panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black")) +
+    labs(title = "Distribution of activity persistency per project",
+         subtitle = paste("Sample of ", sample.size, " projects")) +
+    ylab("deviation from mean in standard deviations") +
+    xlab("projects ")
+
+    save.plot(p, "projects_persistency_sd.png")
+}
+
 # chi-square tests
 # target: test whether the variance in each variable is significantly different from 0
 
@@ -449,17 +522,175 @@ ops.test.var.print <- function(res){
 
 
 ### --- do the work
+
+# put all projects together
 ops.all = coerce.ratios()
 
-# plot the variables
-ops.boxplot.a_focus.simple(ops.all$a_focus.simple)
-ops.boxplot.a_focus.sd(ops.all$a_focus.sd)
-
-ops.boxplot.a_level.extent(ops.all$a_level)
-ops.boxplot.a_level.persistency(ops.all$a_level)
-
-ops.boxplot.reputation(ops.all$reputation)
+# generate some plots
+if(param.plot.ops) {
+  if (F) {
+    ops.boxplot.a_focus.simple(ops.all$a_focus.simple)
+    ops.boxplot.a_focus.sd(ops.all$a_focus.sd)
+    
+    ops.boxplot.a_level.extent(ops.all$a_level)
+    ops.boxplot.a_level.persistency(ops.all$a_level)
+    
+    ops.boxplot.reputation(ops.all$reputation)
+  }
+  
+  if (T) {
+    projects.boxplot.a_level.sd(ops.all$a_level)
+  }
+}
 
 # test variances
-ops.test.var.print(ops.test.var(ops.all$a_focus.simple))
-ops.test.var.print(ops.test.var(ops.all$a_focus.sd))
+# ops.test.var.print(ops.test.var(ops.all$a_focus.simple))
+# ops.test.var.print(ops.test.var(ops.all$a_focus.sd))
+
+# generate variable matrix
+get.independents <- function(ops.all){
+  # activity persistency
+  temp = as.data.frame(cbind(persistency_sd = ops.all$a_level$persistency_sd,
+                             project = ops.all$a_level$project))
+  temp$L = temp$persistency_sd > param.threshold.persistency_sd
+  ind  = data.frame(persistency_sd = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1])
+  
+  # activity extent
+  temp = as.data.frame(cbind(persistency_sd = ops.all$a_level$extent_sd,
+                             project = ops.all$a_level$project))
+  temp$L = temp$persistency_sd > param.threshold.extent_sd
+  ind$extent_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  
+  # activity focus
+  # 1. 
+  temp = as.data.frame(cbind(code_issue_sd = ops.all$a_focus.sd$code_issue,
+                             project = ops.all$a_focus.sd$project))
+  
+  temp$L = temp$code_issue_sd > param.threshold.code_issue_sd
+  ind$code_issue_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  
+  
+  # 2. 
+  temp = as.data.frame(cbind(code_review_contribution_sd = ops.all$a_focus.sd$code_review_contribution,
+                             project = ops.all$a_focus.sd$project))
+  
+  temp$L = temp$code_review_contribution_sd > param.threshold.code_review_contribution_sd
+  ind$code_review_contribution_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  
+  
+  # 3. 
+  temp = as.data.frame(cbind(issue_reports_discussion_sd = ops.all$a_focus.sd$issue_reports_discussion,
+                             project = ops.all$a_focus.sd$project))
+  
+  temp$L = temp$issue_reports_discussion_sd > param.threshold.issue_reports_discussion_sd
+  ind$issue_reports_discussion_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  
+  # 4. 
+  temp = as.data.frame(cbind(technical_discussion_sd = ops.all$a_focus.sd$technical_discussion,
+                             project = ops.all$a_focus.sd$project))
+  
+  temp$L = temp$technical_discussion_sd > param.threshold.technical_discussion_sd
+  ind$technical_discussion_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  
+  # reputation
+  # 1. proximity prestige 
+  temp = as.data.frame(cbind(proximity_prestige = ops.all$reputation$proximity_prestige,
+                             project = ops.all$reputation$project))
+  
+  temp$L = temp$proximity_prestige > param.threshold.proximity_prestige
+  ind$reputation  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  # 2. ...
+  
+  # experience
+  temp = as.data.frame(cbind(experience_sd = ops.all$experience$proj_experience_sd,
+                             project = ops.all$experience$project))
+  
+  temp$L = temp$experience_sd > param.threshold.experience_sd
+  ind$experience_sd = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  
+  return(ind)
+}
+
+
+# get all independents
+independents <- get.independents(ops.all)
+
+# plot independents
+
+#' plots pairplot for all independent variables
+#'
+#'
+ind.pairs <- function(independents){
+
+png(
+  filename = paste(param.plot.exp, "pairs_independents.png", sep = ""),
+  res = param.plot.res,
+  width = param.plot.width,
+  height = param.plot.height,
+  units = param.plot.units
+)
+  
+
+g <- ggpairs(independents, columns=c('code_issue_sd', 
+                                'code_review_contribution_sd', 
+                                'issue_reports_discussion_sd',
+                                'technical_discussion_sd'),
+        title = "Correlation of activity focus ratios",
+        columnLabels = c("code/issue", "c. review/contrib.", "i. reports/discuss.", "contrib./discuss."),
+        lower = list(
+            continuous = wrap("smooth", alpha = 0.2, color = "blue") 
+          ),
+        upper = list(continuous = wrap("cor", size = 2))
+        )
+
+
+g <- g + theme(
+  axis.text = element_text(size = 4),
+  axis.title = element_text(size = 4),
+  legend.background = element_rect(fill = "white"),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.background = element_rect(fill = "grey95")
+)
+
+print(g)
+
+dev.off()
+
+}
+
+#' plots boxplot for all independents
+#'
+#'
+ind.boxplot <- function(independents){
+
+  vec <- ops.vectorize(independents)
+  p <- ggplot(vec, aes(y = val, x = cat)) +
+    geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+    ylab("share of subgroup members in project members") +
+    xlab("subgroups") +
+    labs(title = "Distribution of subgroup member shares",
+         subtitle = paste("Number of projects: ", nrow(independents))) +
+    theme(panel.grid.major.x = element_blank(), 
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black")) +
+    scale_x_discrete(labels=c(
+      "1" = paste("rel. persistent\ncut: ", param.threshold.persistency_sd),
+      "2" = paste("rel. many contributions\ncut: ", param.threshold.extent_sd),
+      "3" = paste("rel. much issue activity\ncut: ", param.threshold.code_issue_sd),
+      "4" = paste("rel. many code contributions\ncut: ", param.threshold.code_review_contribution_sd),
+      "5" = paste("rel. much issue discussion\ncut: ", param.threshold.issue_reports_discussion_sd),
+      "6" = paste("rel. much code discussion\ncut :", param.threshold.code_review_contribution_sd),
+      "7" = paste("rel. much project reputation\ncut: ", param.threshold.proximity_prestige),
+      "8" = paste("rel. much project experience\ncut: ", param.threshold.experience_sd)
+      )) +
+    theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1))
+  
+  save.plot(p, "boxplot_subgroup_member_share.png")
+}
+
+if(param.plot.ind){
+  ind.pairs(independents)
+  ind.boxplot(independents)
+}
+
