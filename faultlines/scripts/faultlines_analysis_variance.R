@@ -570,61 +570,57 @@ if(param.plot.ops) {
 # generate variable matrix
 get.independents <- function(ops.all){
   # activity persistency
-  temp = as.data.frame(cbind(persistency_sd = ops.all$a_level$persistency_sd,
-                             project = ops.all$a_level$project))
+  temp = data.frame(persistency_sd = ops.all$a_level$persistency_sd,
+                    project = ops.all$a_level$project)
   temp$L = temp$persistency_sd > param.threshold.persistency_sd
-  ind  = data.frame(persistency_sd = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1])
+  agg = aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)
+  ind  = data.frame(project = agg$Category,
+                    persistency_sd = agg$x/count(temp, "project")$freq)
   
   # activity extent
-  temp = as.data.frame(cbind(persistency_sd = ops.all$a_level$extent_sd,
-                             project = ops.all$a_level$project))
-  temp$L = temp$persistency_sd > param.threshold.extent_sd
+  temp = data.frame(extent_sd = ops.all$a_level$extent_sd,
+                    project = ops.all$a_level$project)
+  temp$L = temp$extent_sd > param.threshold.extent_sd
   ind$extent_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   # activity focus
   # 1. 
-  temp = as.data.frame(cbind(code_issue_sd = ops.all$a_focus.sd$code_issue,
-                             project = ops.all$a_focus.sd$project))
-  
+  temp = data.frame(code_issue_sd = ops.all$a_focus.sd$code_issue,
+                    project = ops.all$a_focus.sd$project)
   temp$L = temp$code_issue_sd > param.threshold.code_issue_sd
   ind$code_issue_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   
   # 2. 
-  temp = as.data.frame(cbind(code_review_contribution_sd = ops.all$a_focus.sd$code_review_contribution,
-                             project = ops.all$a_focus.sd$project))
-  
+  temp = data.frame(code_review_contribution_sd = ops.all$a_focus.sd$code_review_contribution,
+                    project = ops.all$a_focus.sd$project)
   temp$L = temp$code_review_contribution_sd > param.threshold.code_review_contribution_sd
   ind$code_review_contribution_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   
   # 3. 
-  temp = as.data.frame(cbind(issue_reports_discussion_sd = ops.all$a_focus.sd$issue_reports_discussion,
-                             project = ops.all$a_focus.sd$project))
-  
+  temp = data.frame(issue_reports_discussion_sd = ops.all$a_focus.sd$issue_reports_discussion,
+                    project = ops.all$a_focus.sd$project)
   temp$L = temp$issue_reports_discussion_sd > param.threshold.issue_reports_discussion_sd
   ind$issue_reports_discussion_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   # 4. 
-  temp = as.data.frame(cbind(technical_discussion_sd = ops.all$a_focus.sd$technical_discussion,
-                             project = ops.all$a_focus.sd$project))
-  
+  temp = data.frame(technical_discussion_sd = ops.all$a_focus.sd$technical_discussion,
+                    project = ops.all$a_focus.sd$project)
   temp$L = temp$technical_discussion_sd > param.threshold.technical_discussion_sd
   ind$technical_discussion_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   # reputation
   # 1. proximity prestige 
-  temp = as.data.frame(cbind(proximity_prestige = ops.all$reputation$proximity_prestige,
-                             project = ops.all$reputation$project))
-  
+  temp = data.frame(proximity_prestige = ops.all$reputation$proximity_prestige,
+                    project = ops.all$reputation$project)
   temp$L = temp$proximity_prestige > param.threshold.proximity_prestige
   ind$reputation  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   # 2. ...
   
   # experience
-  temp = as.data.frame(cbind(experience_sd = ops.all$experience$proj_experience_sd,
-                             project = ops.all$experience$project))
-  
+  temp = data.frame(experience_sd = ops.all$experience$proj_experience_sd,
+                    project = ops.all$experience$project)
   temp$L = temp$experience_sd > param.threshold.experience_sd
   ind$experience_sd = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
