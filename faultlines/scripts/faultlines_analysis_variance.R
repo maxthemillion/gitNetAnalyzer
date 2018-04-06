@@ -9,6 +9,7 @@ library(EnvStats)
 library(ggplot2)
 library(gridExtra)
 library(plyr)
+library(GGally)
 
 # parameters:
 param.analysis.sample = F
@@ -98,34 +99,50 @@ coerce.ratios <- function(f = NULL) {
   return(ops.all)
 }
 
+#'import ops file and convert to numeric/factor
+coerce_new <- function(){
+  file = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/variation/ops_all.csv"
+  ops <- read.csv(file)
+  
+  ops$project <- as.factor(ops$project)
+  
+  ops.all = list()
+  
+  ops.all$a_focus.simple = get.a_focus.simple(ops)
+  ops.all$a_focus.sd = get.a_focus.sd(ops)
+  ops.all$a_level = get.a_level(ops)
+  ops.all$experience = get.experience(ops)
+  ops.all$reputation = get.reputation(ops)
+  
+  return(ops.all)
+}
+
+
+
 #' separates simple ratios from ops data frame
 #' @param ops: operationalizations data frame
 #' @return data.frame containing simple ops ratios
-get.a_focus.simple <- function(ops, i) {
-  ops.a_focus.simple <- as.data.frame(
-    cbind(
+get.a_focus.simple <- function(ops, i = NULL) {
+  ops.a_focus.simple <- data.frame(
       code_issue = ops$ratio_code_issue,
       code_review_contribution = ops$ratio_code_review_contribution,
       issue_reports_discussion = ops$ratio_issue_reports_discussion,
       technical_discussion = ops$ratio_technical_discussion,
-      project = rep(i, times = nrow(ops))
+      project = ops$project
     )
-  )
   return (ops.a_focus.simple)
 }
 
 #' separates standardized relative activity focus ratios from op df
 #'
 #'
-get.a_focus.sd <- function(ops, i) {
-  ops.a_focus.sd <- as.data.frame(
-    cbind(
+get.a_focus.sd <- function(ops, i = NULL) {
+  ops.a_focus.sd <- data.frame(
       code_issue = ops$ratio_code_issue_sd,
       code_review_contribution = ops$ratio_code_review_contribution_sd,
       issue_reports_discussion = ops$ratio_issue_reports_discussion_sd,
       technical_discussion = ops$ratio_technical_discussion_sd,
-      project = rep(i, times = nrow(ops))
-    )
+      project = ops$project
   )
   
   return (ops.a_focus.sd)
@@ -134,13 +151,13 @@ get.a_focus.sd <- function(ops, i) {
 #' separates activity level ratios from op df
 #'
 #'
-get.a_level <- function(ops, i){
-  ops.a_level <- as.data.frame(cbind(persistency = ops$persistency,
+get.a_level <- function(ops, i = NULL){
+  ops.a_level <- data.frame(persistency = ops$persistency,
                                      persistency_sd = ops$persistency_sd,
                                      extent= ops$contribution_extent,
                                      extent_sd = ops$contribution_extent_sd,
-                                     project = rep(i, times = nrow(ops))
-  ))
+                                     project = ops$project
+  )
   
   return(ops.a_level)
 }
@@ -148,24 +165,23 @@ get.a_level <- function(ops, i){
 #' separates experience measures from op df
 #'
 #'
-get.experience <- function(ops, i){
-  ops.experience <- as.data.frame(cbind(proj_experience = ops$proj_experience,
+get.experience <- function(ops, i = NULL){
+  ops.experience <- data.frame(proj_experience = ops$proj_experience,
                                     proj_experience_sd = ops$proj_experience_sd,
-                                    project = rep(i, times = nrow(ops))
-  ))
+                                    project = ops$project)
 }
 
 
 #' separates reputation measures from op df
 #'
 #'
-get.reputation <- function(ops, i){
+get.reputation <- function(ops, i = NULL ){
   ops.reputation <- data.frame(degree_centrality = ops$degree_centrality,
                                betweenness_centrality = ops$betweenness_centrality,
                                closeness_centrality = ops$closeness_centrality,
                                degree_prestige = ops$degree_prestige,
                                proximity_prestige = ops$proximity_prestige,
-                               project = rep(i, times = nrow(ops))
+                               project = ops$project
   )
   return(ops.reputation)
 }
@@ -437,10 +453,14 @@ ops.scatterplot.a_level.sd <- function(ops.a_level.sd){
 #'
 projects.boxplot.a_level.sd <- function(ops.a_level.sd){
   sample.size = 50
-  data.sample = sample((1:length(unique(ops.a_level.sd$project))), sample.size)
+  pool = unique(ops.a_level.sd$project)
   
-  plot.data = ops.a_level.sd[ops.a_level.sd$project %in% data.sample]
-
+  data.sample = sample(pool, sample.size)
+  
+  plot.data = ops.a_level.sd[ops.a_level.sd$project %in% data.sample,]
+  
+  ops.a_level.sd$project <- as.factor(ops.a_level.sd$project)
+  
   p <- ggplot(plot.data, aes(x = project, y = persistency_sd)) +
     geom_hline(aes(yintercept= -1), colour="grey", linetype="dashed") +
     geom_hline(aes(yintercept= 0), colour="black") +
@@ -524,11 +544,11 @@ ops.test.var.print <- function(res){
 ### --- do the work
 
 # put all projects together
-ops.all = coerce.ratios()
+ops.all = coerce_new()
 
 # generate some plots
 if(param.plot.ops) {
-  if (F) {
+  if (T) {
     ops.boxplot.a_focus.simple(ops.all$a_focus.simple)
     ops.boxplot.a_focus.sd(ops.all$a_focus.sd)
     
@@ -614,6 +634,10 @@ get.independents <- function(ops.all){
 
 # get all independents
 independents <- get.independents(ops.all)
+
+# save independents to csv
+file.path = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/independents.csv"
+write.csv(independents, file = file.path)
 
 # plot independents
 

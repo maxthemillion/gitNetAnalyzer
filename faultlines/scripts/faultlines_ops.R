@@ -8,6 +8,7 @@ library(igraph)
 library(car)
 library(futile.logger)
 library(lubridate)
+library(data.table)
 
 neo = startGraph("http://localhost:7474/db/data/",
                  username = "max",
@@ -17,6 +18,10 @@ flog.threshold(INFO)
 flog.appender(appender.file('/home/rahnm/R/log/faultlines.log'))
 
 ##### parameters start #####
+## select export format
+# if T, ops are saved to a separate file for each project
+# if F, all ops for all projects are being combined to a single file.
+param.export.separate = F
 
 ## select projects to analyze
 # if param.analysis.all == T, all projects in the DB are being considered
@@ -590,12 +595,12 @@ return(active)
 #'   @param op:     operationalization data frame
 #'   @param c:      igraph communities object
 #'   @return merged data frame including group information per user
-ops.assemble <- function(communities, ratios, collabs, persistency, network_measures) {
+ops.assemble <- function(project, communities, ratios, collabs, persistency, network_measures) {
     df = merge(x = communities, y = ratios, by = "gha_id", all.x = T)
-  df = merge(x = df, y = network_measures, by = "gha_id", all.x = T)
-  df[, 'collaborator_status'] = df$gha_id %in% collabs$gha_id
-  df = merge(x = df, y = persistency, by = "gha_id", all.x = T)
-  
+    df = merge(x = df, y = network_measures, by = "gha_id", all.x = T)
+    df[, 'collaborator_status'] = df$gha_id %in% collabs$gha_id
+    df = merge(x = df, y = persistency, by = "gha_id", all.x = T)
+    df$project = project
   return (df)
 }
 
@@ -624,6 +629,8 @@ ops.get <- function(owner, dt_start, dt_end) {
   comments = get_comment_subgraph(owner, dt_start, dt_end)
 
   if (is.data.frame(comments) && !nrow(comments) == 0) {
+    ## Independent variables
+    
     # get the project start date
     proj_start = get_proj_start(owner)
     
@@ -650,9 +657,11 @@ ops.get <- function(owner, dt_start, dt_end) {
     # get contribution persistency
     persistency = get_persistency(owner, dt_start, dt_end, proj_start)
     
+    
     # merge ratios, community information, persistency and collaborator status
     res <- tryCatch({  
-      ops = ops.assemble(communities = communities, 
+      ops = ops.assemble(project = owner,
+                         communities = communities, 
                          ratios = ratios, 
                          collabs = collaborators,
                          persistency = persistency, 
@@ -674,9 +683,8 @@ ops.get <- function(owner, dt_start, dt_end) {
 
 #' saves an operationalizations csv file per project
 main <- function () {
-
-  skip = 140
-  remove = c(143)
+  skip = NA
+  remove = NA
   projects <- get_project_names()
   
   if(!is.na(remove)){
@@ -688,12 +696,15 @@ main <- function () {
     projects = data.frame(names = projects[skip+1:nrow(projects),])
   }
   
+  result = list()
+  i = 1
   for (project in projects$names) {
     ops = tryCatch({
       ops <- ops.get(project, 
                      param.analysis.dt_start, 
                      param.analysis.dt_end)
     },
+    
     error = function(err){
       print(err)
       print(project)
@@ -701,13 +712,22 @@ main <- function () {
       return(ops)
     })
       
-    if (!is.null(ops)) {
+    if (!is.null(ops) & param.export.separate) {
       file.path.var = paste("/home/rahnm/R/analysis/faultlines/variation/op_df_",
                             project,
                             ".csv",
                             sep = "")
       write.csv(ops, file = file.path.var)
+    } else if (!is.null(ops) & !param.export.separate) {
+       result[[i]] = ops
+       i = i + 1
+       print(paste("projects handled: ", i/nrow(projects), "%"))
     }
+  }
+  
+  if(!param.export.separate){
+    ops = rbindlist(result)
+    write.csv(ops, file = "/home/rahnm/R/analysis/faultlines/variation/ops_all.csv")
   }
 }
 
