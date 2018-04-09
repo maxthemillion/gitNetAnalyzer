@@ -575,54 +575,54 @@ get.independents <- function(ops.all){
   temp$L = temp$persistency_sd > param.threshold.persistency_sd
   agg = aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)
   ind  = data.frame(project = agg$Category,
-                    persistency_sd = agg$x/count(temp, "project")$freq)
+                    rel_persistent = agg$x/count(temp, "project")$freq)
   
   # activity extent
   temp = data.frame(extent_sd = ops.all$a_level$extent_sd,
                     project = ops.all$a_level$project)
   temp$L = temp$extent_sd > param.threshold.extent_sd
-  ind$extent_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  ind$rel_extensive  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   # activity focus
   # 1. 
   temp = data.frame(code_issue_sd = ops.all$a_focus.sd$code_issue,
                     project = ops.all$a_focus.sd$project)
   temp$L = temp$code_issue_sd > param.threshold.code_issue_sd
-  ind$code_issue_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  ind$issue_focus  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   
   # 2. 
   temp = data.frame(code_review_contribution_sd = ops.all$a_focus.sd$code_review_contribution,
                     project = ops.all$a_focus.sd$project)
   temp$L = temp$code_review_contribution_sd > param.threshold.code_review_contribution_sd
-  ind$code_review_contribution_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  ind$code_comment_focus  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   
   # 3. 
   temp = data.frame(issue_reports_discussion_sd = ops.all$a_focus.sd$issue_reports_discussion,
                     project = ops.all$a_focus.sd$project)
   temp$L = temp$issue_reports_discussion_sd > param.threshold.issue_reports_discussion_sd
-  ind$issue_reports_discussion_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  ind$issue_comment_focus  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   # 4. 
   temp = data.frame(technical_discussion_sd = ops.all$a_focus.sd$technical_discussion,
                     project = ops.all$a_focus.sd$project)
   temp$L = temp$technical_discussion_sd > param.threshold.technical_discussion_sd
-  ind$technical_discussion_sd  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  ind$techcontrib_focus  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   # reputation
   # 1. proximity prestige 
   temp = data.frame(proximity_prestige = ops.all$reputation$proximity_prestige,
                     project = ops.all$reputation$project)
   temp$L = temp$proximity_prestige > param.threshold.proximity_prestige
-  ind$reputation  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  ind$rel_high_reputation  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   # 2. ...
   
   # experience
   temp = data.frame(experience_sd = ops.all$experience$proj_experience_sd,
                     project = ops.all$experience$project)
   temp$L = temp$experience_sd > param.threshold.experience_sd
-  ind$experience_sd = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
+  ind$rel_experienced = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
   return(ind)
 }
@@ -633,7 +633,7 @@ independents <- get.independents(ops.all)
 
 # save independents to csv
 file.path = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/independents.csv"
-write.csv(independents, file = file.path)
+write.csv(independents, file = file.path, row.names = F)
 
 # plot independents
 
@@ -651,10 +651,10 @@ png(
 )
   
 
-g <- ggpairs(independents, columns=c('code_issue_sd', 
-                                'code_review_contribution_sd', 
-                                'issue_reports_discussion_sd',
-                                'technical_discussion_sd'),
+g <- ggpairs(independents, columns=c('issue_focus', 
+                                'code_comment_focus', 
+                                'issue_comment_focus',
+                                'techcontrib_focus'),
         title = "Correlation of activity focus ratios",
         columnLabels = c("code/issue", "c. review/contrib.", "i. reports/discuss.", "contrib./discuss."),
         lower = list(
@@ -683,9 +683,12 @@ dev.off()
 #'
 #'
 ind.boxplot <- function(independents){
-
-  vec <- ops.vectorize(independents)
-  p <- ggplot(vec, aes(y = val, x = cat)) +
+  
+  # vec <- ops.vectorize(independents)
+  
+  vec <- melt(independents)
+  
+  p <- ggplot(vec, aes(y = value, x = variable)) +
     geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
     ylab("share of subgroup members in project members") +
     xlab("subgroups") +
@@ -695,14 +698,14 @@ ind.boxplot <- function(independents){
           panel.grid.minor = element_blank(),
           axis.line = element_line(colour = "black")) +
     scale_x_discrete(labels=c(
-      "1" = paste("rel. persistent\ncut: ", param.threshold.persistency_sd),
-      "2" = paste("rel. many contributions\ncut: ", param.threshold.extent_sd),
-      "3" = paste("rel. much issue activity\ncut: ", param.threshold.code_issue_sd),
-      "4" = paste("rel. many code contributions\ncut: ", param.threshold.code_review_contribution_sd),
-      "5" = paste("rel. much issue discussion\ncut: ", param.threshold.issue_reports_discussion_sd),
-      "6" = paste("rel. much code discussion\ncut :", param.threshold.code_review_contribution_sd),
-      "7" = paste("rel. much project reputation\ncut: ", param.threshold.proximity_prestige),
-      "8" = paste("rel. much project experience\ncut: ", param.threshold.experience_sd)
+      "rel_persistent" = paste("rel. persistent\ncut: ", param.threshold.persistency_sd),
+      "rel_extensive" = paste("rel. extensive\ncut: ", param.threshold.extent_sd),
+      "issue_focus" = paste("rel. much issue activity\ncut: ", param.threshold.code_issue_sd),
+      "code_comment_focus" = paste("rel. much code comments\ncut: ", param.threshold.code_review_contribution_sd),
+      "issue_comment_focus" = paste("rel. much issue comments\ncut: ", param.threshold.issue_reports_discussion_sd),
+      "techcontrib_focus" = paste("rel. much code discussion\ncut :", param.threshold.code_review_contribution_sd),
+      "rel_high_reputation" = paste("rel. much project reputation\ncut: ", param.threshold.proximity_prestige),
+      "rel_experienced" = paste("rel. experienced\ncut: ", param.threshold.experience_sd)
       )) +
     theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1))
   

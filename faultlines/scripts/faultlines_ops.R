@@ -27,15 +27,13 @@ param.export.separate = F
 # if param.analysis.all == T, all projects in the DB are being considered
 param.analysis.all = T
 # name of the project to analyze, if param.analysis.all == F
-param.analysis.single = 'waffleio' 
-
-## set analysis period
-param.analysis.dt_start = "2017-01-01"
-param.analysis.dt_end = "2017-08-01"
+param.analysis.single = 'waffleio'
+# period length for operationalizations calcualtion in days
+param.analysis.ops.period_length = 180
 
 ## set persistency parameters
-# period length in months
-param.analysis.period.length = 1 
+# period length in days
+param.analysis.period.length = 30 
 # no. of contributions. defines how many contributions must be made in a period 
 # such that it counts as active
 param.analysis.active.min = 1 
@@ -47,25 +45,25 @@ param.analysis.active.min = 1
 param.analysis.dev_core.rule = "contributions"
 
 # rule for network selection. Can be 'both' or 'one' 
-# If 'both', source and target need to fulfill the dev_core criteria for the connection to be considered.
-# If 'one', just one of both needs to fulfill the criteria.
+# If 'both', source and target need to fulfill the dev_core criterion for the connection to be considered.
+# If 'one', just one of both needs to fulfill the criterion
 param.analysis.filter.rule = "both"
 
 # number of contributions. defines how many contributions must be made in total 
 # such that a developer belongs to the dev_core
-param.analysis.dev_core.min = 5
+param.analysis.dev_core.min = 20/180
 
 #### parameters end ####
 
 #' retrieves the comment subgraph per project
-#'   @param owner:      specific project
+#'   @param p:      specific project
 #'   @param dt_start:   start date
 #'   @param dt_end:     end date
 #'   @return df:        result of the neo4j query as data frame and the following columns
 #'                           source    gha_id of source node
 #'                           target    gha_id of target node
 #'                           weight    count of connections between source and target
-get_comment_subgraph <- function(owner, dt_start, dt_end) {
+get_comment_subgraph <- function(p, dt_start, dt_end) {
   query = sprintf(
     "
     MATCH (o:OWNER{login: '%s'})
@@ -90,7 +88,7 @@ get_comment_subgraph <- function(owner, dt_start, dt_end) {
     count(p) as weight
     "
     ,
-    owner,
+    p,
     dt_start,
     dt_end
   )
@@ -101,39 +99,48 @@ get_comment_subgraph <- function(owner, dt_start, dt_end) {
 
 #' returns a list of dev_core developers from the data base
 #' dev_core criteria:
-#'  developer has more than x contributions during total project lifetime
-get_dev_core <- function(owner, proj_start){
+#'  developer has more than x contributions during analysis period
+get_dev_core <- function(p, dt_start, dt_end){
   if(param.analysis.dev_core.rule == "contributions"){
-  query = sprintf("
-      MATCH (o:OWNER{login: '%s'})
-      WITH o
-      // comments
-      MATCH (u:USER)-[:makes]->(node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
-      WITH o, COLLECT({u_id: u.gha_id, n_id: id(node)}) as comments
-                  
-      // technicals
-      MATCH (u:USER)-->(node) -[:to]-> () -[:belongs_to]-> (o)
-      WHERE
-      (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
-      WITH comments + COLLECT({u_id: u.gha_id, n_id: id(node)}) as allContributions
-      UNWIND allContributions as row
-            
-      WITH row.u_id as u_id, COUNT(DISTINCT row.n_id) as count_contributions
-      WHERE count_contributions >= %s
-      RETURN u_id as gha_id;",
-      owner,
-      param.analysis.dev_core.min
-      )
+    query = sprintf("
+                    MATCH (o:OWNER{login: '%s'})
+                    WITH o,
+                    apoc.date.parse('%s', 'ms', 'yyyy-MM-dd') as start,
+                    apoc.date.parse('%s', 'ms', 'yyyy-MM-dd') as end
+                    // comments
+                    MATCH (u:USER)-[:makes]->(node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
+                    WHERE node.event_time >= start AND 
+                    node.event_time <= end
+                    WITH start, end, o, COLLECT({u_id: u.gha_id, n_id: id(node)}) as comments
+                    
+                    // technicals
+                    MATCH (u:USER)-->(node) -[:to]-> () -[:belongs_to]-> (o)
+                    WHERE
+                    (node:PULLREQUEST OR node:ISSUE OR node:COMMIT) AND
+                    node.event_time >= start AND 
+                    node.event_time <= end
+                    WITH comments + COLLECT({u_id: u.gha_id, n_id: id(node)}) as allContributions
+                    UNWIND allContributions as row
+                    
+                    WITH row.u_id as u_id, COUNT(DISTINCT row.n_id) as count_contributions
+                    WHERE count_contributions >= %s
+                    RETURN u_id as gha_id;
+                    ",
+                    p,
+                    dt_start,
+                    dt_end,
+                    param.analysis.dev_core.min * param.analysis.ops.period_length
+                    )
+    
   } else if(param.analysis.dev_core.rule == "collaborator"){
     # TODO
-    query = sprintf("
-    MATCH (o:OWNER{login: '%s'})
-    WITH o
-    MATCH (u:USER)-[:becomes]->(node:COLLABORATOR)-[:to]->(:REPO)-[:belongs_to]->(o)
+    query = sprintf("MATCH (o:OWNER{login: '%s'})
+                    WITH o
+                    MATCH (u:USER)-[:becomes]->(node:COLLABORATOR)-[:to]->(:REPO)-[:belongs_to]->(o)
                     
-    RETURN DISTINCT u.gha_id as gha_id;                    
-    ",
-    owner)
+                    RETURN DISTINCT u.gha_id as gha_id;                    
+                    ",
+                    p)
   }
   
   dev_core = cypher(neo, query)
@@ -153,7 +160,7 @@ filter_dev_core <- function(df, dev_core){
 }
 
 #' retrieves all project names as list
-#'   @return list of owner logins
+#'   @return list of p logins
 get_project_names <- function() {
   if (param.analysis.all) {
     query = sprintf(
@@ -174,7 +181,7 @@ get_project_names <- function() {
 
 #' retrieves the count of technical contributions per type and user to a specific project
 #' only those users are considered, who also contributed comments to the project
-#'   @param owner:      specific project
+#'   @param p:      specific project
 #'   @param dt_start:   start date
 #'   @param dt_end:     end date
 #'   @return df:        result of the neo4j query as data frame and the following columns
@@ -182,7 +189,7 @@ get_project_names <- function() {
 #'                           no_issues_reported      no of issues reported by the user to the specified project
 #'                           no_pullreq_requested    no of pullrequests requested by the user to the specified project
 #'                           no_commits_committed    no of commits commmitted by the user to the specified project
-get_count_technicals <- function(owner, dt_start, dt_end) {
+get_count_technicals <- function(p, dt_start, dt_end) {
     query = sprintf(
       "
       MATCH (o:OWNER{login: '%s'})
@@ -205,7 +212,7 @@ get_count_technicals <- function(owner, dt_start, dt_end) {
       SIZE(FILTER(node in technicals WHERE 'PULLREQUEST' in labels(node))) as no_pullrequests_requested,
       SIZE(FILTER(node in technicals WHERE 'COMMIT' in labels(node))) as no_commits_committed;
       ",
-      owner,
+      p,
       dt_start,
       dt_end
     )
@@ -222,7 +229,7 @@ get_count_technicals <- function(owner, dt_start, dt_end) {
 }
 
 #' returns the number of issue, commit and pull request comments per type and user to a specific project
-#'   @param owner:      specific project
+#'   @param p:      specific project
 #'   @param dt_start:   start date
 #'   @param dt_end:     end date
 #'   @return result of the neo4j query as data frame and the following columns
@@ -230,7 +237,7 @@ get_count_technicals <- function(owner, dt_start, dt_end) {
 #'                      issue_comments      no. of issue comments made by the user
 #'                      pullreq_comments    no of pullrequest comments made by the user
 #'                      commit_comments     no of commit comments made by the user
-get_count_comment_types <- function(owner, dt_start, dt_end) {
+get_count_comment_types <- function(p, dt_start, dt_end) {
   query = sprintf(
     "
     MATCH (o:OWNER{login: '%s'})
@@ -251,7 +258,7 @@ get_count_comment_types <- function(owner, dt_start, dt_end) {
     SIZE(FILTER(node in all WHERE 'PR_COMMENT' in labels(node))) as pullreq_comments,
     SIZE(FILTER(node in all WHERE 'C_COMMENT' in labels(node))) as commit_comments;
     ",
-    owner,
+    p,
     dt_start,
     dt_end
   )
@@ -276,7 +283,7 @@ get_count_comment_types <- function(owner, dt_start, dt_end) {
 #' returns gha_ids of those users which became collaborators previous to the current period
 #' 
 #'   
-get_collaborator_status <- function(owner, dt_start, dt_end){
+get_collaborator_status <- function(p, dt_start, dt_end){
   query = sprintf(
     "
     MATCH (o:OWNER{login: '%s'})
@@ -289,7 +296,7 @@ get_collaborator_status <- function(owner, dt_start, dt_end){
     WHERE node.event_time <= end
     RETURN DISTINCT u.gha_id as gha_id;
     ",
-    owner,
+    p,
     dt_end
   )
   
@@ -315,13 +322,13 @@ get_collaborator_status <- function(owner, dt_start, dt_end){
 #'    i.    total no. contributions in the current period
 #'    ii.   share of own contributions in total project contributions
 #'    
-#'   @param owner:      specific project
+#'   @param p:      specific project
 #'   @param dt_start:   start date
 #'   @param dt_end:     end date
 #'   @return operationalization data frame
-ops.calculate.ratios <- function(owner, dt_start, dt_end) {
+ops.calculate.ratios <- function(p, dt_start, dt_end) {
   tech = tryCatch({
-    tech = get_count_technicals(owner, dt_start, dt_end)
+    tech = get_count_technicals(p, dt_start, dt_end)
   },
   error = function(err){
     df = data.frame(gha_id = c(-999),
@@ -331,7 +338,7 @@ ops.calculate.ratios <- function(owner, dt_start, dt_end) {
     return(df)
   })
 
-  comment_types = get_count_comment_types(owner, dt_start, dt_end)
+  comment_types = get_count_comment_types(p, dt_start, dt_end)
   
   df <- merge(x = tech,
               y = comment_types,
@@ -448,36 +455,81 @@ ops.calculate.network_measures <- function(graph_d){
 #' get date of first contribution to the project
 #'
 #'
-get_proj_start <- function(owner){
-  query_start_proj = 
+get_proj_start <- function(p){
+  query_start_proj = sprintf(
     "
-  MATCH (o:OWNER{login: 'waffleio'})
-  WITH o
-  MATCH (node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
-  WITH o, node.event_time as c_time ORDER BY c_time ASC LIMIT 1
+    MATCH (o:OWNER{login: '%s'})
+    WITH o
+    MATCH (node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
+    WITH o, node.event_time as c_time ORDER BY c_time ASC LIMIT 1
+    
+    MATCH (node)-[:to]->()-[:belongs_to]->(o)
+    WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
+    WITH c_time, node.event_time as t_time ORDER BY t_time ASC LIMIT 1
+    WITH COLLECT(c_time)+COLLECT(t_time) as times
+    UNWIND times as r
+    RETURN apoc.date.format(min(r), 'ms', 'yyyy-MM-dd');
+    ", 
+    p
+  )
   
-  MATCH (node)-[:to]->()-[:belongs_to]->(o)
-  WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
-  WITH c_time, node.event_time as t_time ORDER BY t_time ASC LIMIT 1
-  WITH COLLECT(c_time)+COLLECT(t_time) as times
-  UNWIND times as r
-  RETURN apoc.date.format(min(r), 'ms', 'yyyy-MM-dd');
-  "
   proj_start = ymd(cypher(neo, query_start_proj))
   
   return(proj_start)
 }
 
 
+#' get date of last contribution to project
+#'
+#'
+get_proj_end <- function(p){
+  query_end_proj = sprintf(
+    "
+    MATCH (o:OWNER{login: '%s'})
+    WITH o
+    MATCH (node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
+    WITH o, node.event_time as c_time ORDER BY c_time DESC LIMIT 1
+    
+    MATCH (node)-[:to]->()-[:belongs_to]->(o)
+    WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
+    WITH c_time, node.event_time as t_time ORDER BY t_time DESC LIMIT 1
+    WITH COLLECT(c_time)+COLLECT(t_time) as times
+    UNWIND times as r
+    RETURN apoc.date.format(min(r), 'ms', 'yyyy-MM-dd');
+    ",
+    p
+  )
+  
+  proj_start = ymd(cypher(neo, query_end_proj))
+  
+  return(proj_start)
+}
+
+
+#' return the analysis period
+#'
+get_analysis_period <- function(p){
+  
+  p_start = ymd(get_proj_start(p))
+  p_end = ymd(get_proj_end(p))
+  
+  analysis_mid = p_start + days(ceiling(interval(p_start, p_end)/days(1)/2))
+  analysis_start = analysis_mid - days(param.analysis.ops.period_length/2)
+  analysis_end = analysis_mid + days(param.analysis.ops.period_length/2)
+  
+  return(interval(analysis_start, analysis_end))
+}
+
+
 #' get the persistency operationalization of active periods per developer
 #'
 #'
-get_persistency <- function(owner, dt_start, dt_end, proj_start){
+get_persistency <- function(p, dt_start, dt_end, proj_start){
   
   
   # how many periods have passed since then?
   proj_time <- interval(proj_start, ymd(dt_end))
-  periods_passed <- ceiling(proj_time/months(param.analysis.period.length))
+  periods_passed <- ceiling(proj_time/days(param.analysis.period.length))
   
   # get date of each users' first comment to the project
   query_1=sprintf(
@@ -487,7 +539,7 @@ get_persistency <- function(owner, dt_start, dt_end, proj_start){
     WITH u.gha_id as gha_id, node.event_time as e_time ORDER BY u, e_time ASC
     RETURN gha_id, apoc.date.format(head(COLLECT(e_time)), 'ms', 'yyyy-MM-dd') as comment_min_time
     ", 
-    owner)
+    p)
   
   date.comment.min  = cypher(neo, query_1)
   date.comment.min$comment_min_time = ymd(date.comment.min$comment_min_time)
@@ -501,7 +553,7 @@ get_persistency <- function(owner, dt_start, dt_end, proj_start){
     WITH u.gha_id as gha_id, node.event_time as e_time ORDER BY u, e_time ASC
     RETURN gha_id, apoc.date.format(head(COLLECT(e_time)), 'ms', 'yyyy-MM-dd') as techcontrib_min_time
     ",
-    owner)
+    p)
   
   date.techcontrib.min = cypher(neo, query_2)
   date.techcontrib.min$techcontrib_min_time = ymd(date.techcontrib.min$techcontrib_min_time)
@@ -519,7 +571,7 @@ get_persistency <- function(owner, dt_start, dt_end, proj_start){
   # get activity data since first contribution to the project
   activity = list()
   dt_ce = dt_e
-  dt_cs = dt_ce - months(param.analysis.period.length) + days(1)
+  dt_cs = dt_ce - days(param.analysis.period.length) + days(1)
   while (dt_ce > proj_start) {
     # calculate the number of active periods since the users' first contribution 
   # do something
@@ -549,7 +601,7 @@ get_persistency <- function(owner, dt_start, dt_end, proj_start){
       WITH row.u_id as u_id, COUNT(DISTINCT row.n_id) as count_contributions
       WHERE count_contributions >= %s
       RETURN u_id as gha_id, 1 as active;",
-      owner,
+      p,
       dt_ce,
       dt_cs,
       param.analysis.active.min)
@@ -558,8 +610,8 @@ get_persistency <- function(owner, dt_start, dt_end, proj_start){
     activity[[str]] = cypher(neo, query)
   
   # set dt_ce and dt_cs
-  dt_ce = dt_ce - months(param.analysis.period.length)
-  dt_cs = dt_ce - months(param.analysis.period.length) + days(1)
+  dt_ce = dt_ce - days(param.analysis.period.length)
+  dt_cs = dt_ce - days(param.analysis.period.length) + days(1)
   }
   
   # merge all dataframes
@@ -576,7 +628,7 @@ get_persistency <- function(owner, dt_start, dt_end, proj_start){
   # calculate the number of active periods since the users' first contribution
   temp = merge(x = active, y = date.all, by = 'gha_id', all.x = T)
   
-  temp$periods_since_first = ceiling(interval(temp$min_date, ymd(dt_end))/months(param.analysis.period.length))
+  temp$periods_since_first = ceiling(interval(temp$min_date, ymd(dt_end))/days(param.analysis.period.length))
   
   active$persistency = temp$sum.active / temp$periods_since_first
   active$persistency_sd = (active$persistency - mean(active$persistency, na.rm = T))/sd(active$persistency, na.rm = T)
@@ -619,23 +671,23 @@ get_communities <- function(graph_u){
 #' 2. creates igraph object from comment subgraph information
 #' 3. clusters the graph
 #' 4. creates operationalization data frame 
-#'   @param owner:      specific project
+#'   @param p:      specific project
 #'   @param dt_start:   start date
 #'   @param dt_end:     end date
 #'   @return operationalizations data frame
-ops.get <- function(owner, dt_start, dt_end) {
+ops.get <- function(p, dt_start, dt_end) {
   
   # get comment subgraph
-  comments = get_comment_subgraph(owner, dt_start, dt_end)
+  comments = get_comment_subgraph(p, dt_start, dt_end)
 
   if (is.data.frame(comments) && !nrow(comments) == 0) {
     ## Independent variables
     
     # get the project start date
-    proj_start = get_proj_start(owner)
+    proj_start = get_proj_start(p)
     
     # get the dev_core team
-    dev_core = get_dev_core(owner)
+    dev_core = get_dev_core(p, dt_start, dt_end)
     
     # filter sporadic contributors and continue with dev_core team data
     comments = filter_dev_core(comments, dev_core)
@@ -649,18 +701,18 @@ ops.get <- function(owner, dt_start, dt_end) {
     network_measures = ops.calculate.network_measures(graph_d)
     
     # get ratios
-    ratios = ops.calculate.ratios(owner, dt_start, dt_end)
+    ratios = ops.calculate.ratios(p, dt_start, dt_end)
     
     # get the contributor status
-    collaborators = get_collaborator_status(owner, dt_start, dt_end)
+    collaborators = get_collaborator_status(p, dt_start, dt_end)
     
     # get contribution persistency
-    persistency = get_persistency(owner, dt_start, dt_end, proj_start)
+    persistency = get_persistency(p, dt_start, dt_end, proj_start)
     
     
     # merge ratios, community information, persistency and collaborator status
     res <- tryCatch({  
-      ops = ops.assemble(project = owner,
+      ops = ops.assemble(project = p,
                          communities = communities, 
                          ratios = ratios, 
                          collabs = collaborators,
@@ -669,6 +721,7 @@ ops.get <- function(owner, dt_start, dt_end) {
     },
     error = function(err){
       print(err)
+      print(p)
       ops = NULL
       return (ops)
     })
@@ -683,45 +736,39 @@ ops.get <- function(owner, dt_start, dt_end) {
 
 #' saves an operationalizations csv file per project
 main <- function () {
-  skip = NA
-  remove = NA
   projects <- get_project_names()
   
-  if(!is.na(remove)){
-    projects = data.frame(projects[-remove,])
-  }
-  
-  if(!is.na(skip)){
-    skip= skip - length(remove)
-    projects = data.frame(names = projects[skip+1:nrow(projects),])
-  }
+  p_count <- nrow(projects)
   
   result = list()
   i = 1
-  for (project in projects$names) {
+  for (p in projects$names) {
     ops = tryCatch({
-      ops <- ops.get(project, 
-                     param.analysis.dt_start, 
-                     param.analysis.dt_end)
+      analysis_interval <- get_analysis_period(p)
+      
+      
+      ops <- ops.get(p, 
+                     ymd(int_start(analysis_interval)), 
+                     ymd(int_end(analysis_interval)))
     },
     
     error = function(err){
       print(err)
-      print(project)
+      print(p)
       ops = NULL
       return(ops)
     })
       
     if (!is.null(ops) & param.export.separate) {
       file.path.var = paste("/home/rahnm/R/analysis/faultlines/variation/op_df_",
-                            project,
+                            p,
                             ".csv",
                             sep = "")
       write.csv(ops, file = file.path.var)
     } else if (!is.null(ops) & !param.export.separate) {
        result[[i]] = ops
+       print(paste("progress ", round(i/p_count*100, 1), "%"))
        i = i + 1
-       print(paste("projects handled: ", i/nrow(projects), "%"))
     }
   }
   
