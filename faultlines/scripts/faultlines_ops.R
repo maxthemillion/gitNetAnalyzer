@@ -503,7 +503,6 @@ get_analysis_period <- function(p){
   return(interval(analysis_start, analysis_end))
 }
 
-
 #' get the persistency operationalization of active periods per developer
 #'
 #'
@@ -623,7 +622,6 @@ get_persistency <- function(p, dt_start, dt_end, proj_start, dev_core){
 return(active)
 }
 
-
 #' joins operationalization df with groups
 #' those users who did not contribute or have not been referenced by any comments will not be clustered into groups,
 #' since the clustering is based on comment relations. These users will be removed in the curse of the merging process
@@ -729,7 +727,7 @@ ops.get <- function(p, dt_start, dt_end) {
                          network_measures = network_measures)
     },
     error = function(err){
-      print(err)
+      print("error when merging dataframes. not enough activity recorded")
       print(p)
       ops = NULL
       return (ops)
@@ -747,7 +745,7 @@ ops.get <- function(p, dt_start, dt_end) {
 main <- function () {
   projects <- get_project_names()
   
-  projects <- data.frame(names = projects[1:100,])
+  # projects <- data.frame(names = projects[1:100,])
   
   p_count <- nrow(projects)
   
@@ -757,14 +755,13 @@ main <- function () {
     ops = tryCatch({
       analysis_interval <- get_analysis_period(p)
       
-      
       ops <- ops.get(p, 
                      ymd(int_start(analysis_interval)), 
                      ymd(int_end(analysis_interval)))
     },
     
     error = function(err){
-      print(err)
+      print("err")
       print(p)
       ops = NULL
       return(ops)

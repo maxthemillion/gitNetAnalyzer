@@ -117,11 +117,15 @@ get_analysis_period <- function(p){
 }
 
 
-#' returns project age in no. of periods
+#' returns project age in no. of days since first contribution
 #'
 #'
-get_proj_age <- function(proj_start){
+get_project_age <- function(p, a_period){
   
+  start = get_proj_start(p)
+  end = ymd(start + days(ceiling(a_period/days(1)/2)))
+  
+  return(interval(start, end)/days(1))
 }
 
 #' returns a count of how many core and non core developers participate in the project
@@ -175,7 +179,8 @@ get_dev_core <- function(p, s_period){
   result = data.frame(  
     no_core = no_core,
     no_non_core = no_non_core,
-    ratio_core = ratio_core
+    ratio_core = ratio_core,
+    proj_size = no_core + no_non_core
   )
   
   return(result)
@@ -229,9 +234,10 @@ get_releases <- function(p, s_period){
 #' 
 #'
 #'
-assemble <- function(p, releases, dev_core){
+assemble <- function(p, releases, dev_core, proj_age){
   df = data.frame(project = p,
-                  releases = releases)
+                  releases = releases,
+                  proj_age = proj_age)
   
   df$releases[is.na(df$releases)] <- 0 # NA means project has no release, therefore set 0
   
@@ -254,14 +260,16 @@ main <- function(){
   
   for (p in projects$project){
     res = tryCatch({
-      analysis_interval <- get_analysis_period(p)
+      a_interval <- get_analysis_period(p)
       
-      success_interval <- get_success_period(ymd(int_start(analysis_interval)))
+      s_interval <- get_success_period(ymd(int_start(a_interval)))
       
-      releases <- get_releases(p, success_interval)
-      dev_core <- get_dev_core(p, success_interval)
+      releases <- get_releases(p, s_interval)
+      dev_core <- get_dev_core(p, s_interval)
       
-      res = assemble(p, releases, dev_core)
+      proj_age <- get_project_age(p, a_interval)
+      
+      res = assemble(p, releases, dev_core, proj_age)
     },
     
     error = function(err){

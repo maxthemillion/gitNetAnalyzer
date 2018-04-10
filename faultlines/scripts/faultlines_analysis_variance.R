@@ -602,6 +602,82 @@ ops.test.var.print <- function(res){
   }
 }
 
+# plot independents
+
+#' plots pairplot for all independent variables
+#'
+#'
+ind.pairs <- function(independents){
+  
+  png(
+    filename = paste(param.plot.exp, "pairs_independents.png", sep = ""),
+    res = param.plot.res,
+    width = param.plot.width,
+    height = param.plot.height,
+    units = param.plot.units
+  )
+  
+  
+  g <- ggpairs(independents, columns=c('issue_focus', 
+                                       'code_comment_focus', 
+                                       'issue_comment_focus',
+                                       'techcontrib_focus'),
+               title = "Correlation of activity focus ratios",
+               columnLabels = c("code/issue", "c. review/contrib.", "i. reports/discuss.", "contrib./discuss."),
+               lower = list(
+                 continuous = wrap("smooth", alpha = 0.2, color = "blue") 
+               ),
+               upper = list(continuous = wrap("cor", size = 2))
+  )
+  
+  
+  g <- g + theme(
+    axis.text = element_text(size = 4),
+    axis.title = element_text(size = 4),
+    legend.background = element_rect(fill = "white"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "grey95")
+  )
+  
+  print(g)
+  
+  dev.off()
+  
+}
+
+#' plots boxplot for all independents
+#'
+#'
+ind.boxplot <- function(independents){
+  
+  # vec <- ops.vectorize(independents)
+  
+  vec <- melt(independents)
+  
+  p <- ggplot(vec, aes(y = value, x = variable)) +
+    geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+    ylab("share of subgroup members in project members") +
+    xlab("subgroups") +
+    labs(title = "Distribution of subgroup member shares",
+         subtitle = paste("Number of projects: ", nrow(independents))) +
+    theme(panel.grid.major.x = element_blank(), 
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black")) +
+    scale_x_discrete(labels=c(
+      "rel_persistent" = paste("rel. persistent\ncut: ", param.threshold.persistency_sd),
+      "rel_extensive" = paste("rel. extensive\ncut: ", param.threshold.extent_sd),
+      "issue_focus" = paste("rel. much issue activity\ncut: ", param.threshold.code_issue_sd),
+      "code_comment_focus" = paste("rel. much code comments\ncut: ", param.threshold.code_review_contribution_sd),
+      "issue_comment_focus" = paste("rel. much issue comments\ncut: ", param.threshold.issue_reports_discussion_sd),
+      "techcontrib_focus" = paste("rel. much code discussion\ncut :", param.threshold.code_review_contribution_sd),
+      "rel_high_reputation" = paste("rel. much project reputation\ncut: ", param.threshold.proximity_prestige),
+      "rel_experienced" = paste("rel. experienced\ncut: ", param.threshold.experience_sd)
+    )) +
+    theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1))
+  
+  save.plot(p, "boxplot_subgroup_member_share.png")
+}
 
 ### --- do the work
 
@@ -688,6 +764,9 @@ get.independents <- function(ops.all){
   temp$L = temp$experience_sd > param.threshold.experience_sd
   ind$rel_experienced = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/count(temp, "project"))[,-1]
   
+  # no subgroups
+  
+  
   return(ind)
 }
 
@@ -699,82 +778,6 @@ independents <- get.independents(ops.all)
 file.path = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/independents.csv"
 write.csv(independents, file = file.path, row.names = F)
 
-# plot independents
-
-#' plots pairplot for all independent variables
-#'
-#'
-ind.pairs <- function(independents){
-
-png(
-  filename = paste(param.plot.exp, "pairs_independents.png", sep = ""),
-  res = param.plot.res,
-  width = param.plot.width,
-  height = param.plot.height,
-  units = param.plot.units
-)
-  
-
-g <- ggpairs(independents, columns=c('issue_focus', 
-                                'code_comment_focus', 
-                                'issue_comment_focus',
-                                'techcontrib_focus'),
-        title = "Correlation of activity focus ratios",
-        columnLabels = c("code/issue", "c. review/contrib.", "i. reports/discuss.", "contrib./discuss."),
-        lower = list(
-            continuous = wrap("smooth", alpha = 0.2, color = "blue") 
-          ),
-        upper = list(continuous = wrap("cor", size = 2))
-        )
-
-
-g <- g + theme(
-  axis.text = element_text(size = 4),
-  axis.title = element_text(size = 4),
-  legend.background = element_rect(fill = "white"),
-  panel.grid.major = element_blank(),
-  panel.grid.minor = element_blank(),
-  panel.background = element_rect(fill = "grey95")
-)
-
-print(g)
-
-dev.off()
-
-}
-
-#' plots boxplot for all independents
-#'
-#'
-ind.boxplot <- function(independents){
-  
-  # vec <- ops.vectorize(independents)
-  
-  vec <- melt(independents)
-  
-  p <- ggplot(vec, aes(y = value, x = variable)) +
-    geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    ylab("share of subgroup members in project members") +
-    xlab("subgroups") +
-    labs(title = "Distribution of subgroup member shares",
-         subtitle = paste("Number of projects: ", nrow(independents))) +
-    theme(panel.grid.major.x = element_blank(), 
-          panel.grid.minor = element_blank(),
-          axis.line = element_line(colour = "black")) +
-    scale_x_discrete(labels=c(
-      "rel_persistent" = paste("rel. persistent\ncut: ", param.threshold.persistency_sd),
-      "rel_extensive" = paste("rel. extensive\ncut: ", param.threshold.extent_sd),
-      "issue_focus" = paste("rel. much issue activity\ncut: ", param.threshold.code_issue_sd),
-      "code_comment_focus" = paste("rel. much code comments\ncut: ", param.threshold.code_review_contribution_sd),
-      "issue_comment_focus" = paste("rel. much issue comments\ncut: ", param.threshold.issue_reports_discussion_sd),
-      "techcontrib_focus" = paste("rel. much code discussion\ncut :", param.threshold.code_review_contribution_sd),
-      "rel_high_reputation" = paste("rel. much project reputation\ncut: ", param.threshold.proximity_prestige),
-      "rel_experienced" = paste("rel. experienced\ncut: ", param.threshold.experience_sd)
-      )) +
-    theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1))
-  
-  save.plot(p, "boxplot_subgroup_member_share.png")
-}
 
 if(param.plot.ind){
   ind.pairs(independents)
