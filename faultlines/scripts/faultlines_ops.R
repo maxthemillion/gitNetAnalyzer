@@ -326,7 +326,7 @@ get_collaborator_status <- function(p, dt_start, dt_end){
 #'   @param dt_start:   start date
 #'   @param dt_end:     end date
 #'   @return operationalization data frame
-ops.calculate.ratios <- function(p, dt_start, dt_end) {
+ops.calculate.ratios <- function(p, dt_start, dt_end, dev_core) {
   tech = tryCatch({
     tech = get_count_technicals(p, dt_start, dt_end)
   },
@@ -346,6 +346,9 @@ ops.calculate.ratios <- function(p, dt_start, dt_end) {
               all = TRUE)
   
   df[is.na(df)] <- 0
+  
+  # remove all users which do not belong to the dev-core
+  df <- df[df$gha_id %in% dev_core$gha_id ,]
 
   #### 4. ####
   # i.
@@ -526,7 +529,6 @@ get_analysis_period <- function(p){
 #'
 get_persistency <- function(p, dt_start, dt_end, proj_start){
   
-  
   # how many periods have passed since then?
   proj_time <- interval(proj_start, ymd(dt_end))
   periods_passed <- ceiling(proj_time/days(param.analysis.period.length))
@@ -625,6 +627,9 @@ get_persistency <- function(p, dt_start, dt_end, proj_start){
     gha_id = df$gha_id, 
     sum.active = apply(df[-1], 1, sum))
   
+  # remove all users which do not belong to the dev-core
+  active <- active[active$gha_id %in% dev_core$gha_id ,]
+  
   # calculate the number of active periods since the users' first contribution
   temp = merge(x = active, y = date.all, by = 'gha_id', all.x = T)
   
@@ -701,13 +706,13 @@ ops.get <- function(p, dt_start, dt_end) {
     network_measures = ops.calculate.network_measures(graph_d)
     
     # get ratios
-    ratios = ops.calculate.ratios(p, dt_start, dt_end)
+    ratios = ops.calculate.ratios(p, dt_start, dt_end, dev_core)
     
     # get the contributor status
     collaborators = get_collaborator_status(p, dt_start, dt_end)
     
     # get contribution persistency
-    persistency = get_persistency(p, dt_start, dt_end, proj_start)
+    persistency = get_persistency(p, dt_start, dt_end, proj_start, dev_core)
     
     
     # merge ratios, community information, persistency and collaborator status

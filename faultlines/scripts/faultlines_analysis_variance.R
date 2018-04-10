@@ -15,7 +15,7 @@ library(GGally)
 param.analysis.sample = F
 param.analysis.sample.size = 100
 
-param.plot.ops = F
+param.plot.ops = T
 param.plot.ind = T
 param.plot.res = 300
 param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
