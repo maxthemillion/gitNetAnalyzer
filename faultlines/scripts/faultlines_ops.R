@@ -527,7 +527,7 @@ get_analysis_period <- function(p){
 #' get the persistency operationalization of active periods per developer
 #'
 #'
-get_persistency <- function(p, dt_start, dt_end, proj_start){
+get_persistency <- function(p, dt_start, dt_end, proj_start, dev_core){
   
   # how many periods have passed since then?
   proj_time <- interval(proj_start, ymd(dt_end))
