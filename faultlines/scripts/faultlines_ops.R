@@ -365,8 +365,7 @@ ops.calculate.ratios <- function(p, dt_start, dt_end, dev_core) {
   # ratio: relative activity focus
   # share of issue related activity in total activity per user in relation to the overall project
   # ratio of issue to total activity.
-  df$ratio_code_issue_sd = (df$ratio_code_issue - mean(df$ratio_code_issue, na.rm = T))/ sd(df$ratio_code_issue, na.rm = T)
-  
+
   
   # iii.
   # ratio: code contributing vs code reviewing
@@ -378,22 +377,10 @@ ops.calculate.ratios <- function(p, dt_start, dt_end, dev_core) {
          df$no_pullrequests_requested + df$no_commits_committed)
     )
   
-  # iv.
-  # ratio: relative code contributions vs reviews
-  df$ratio_code_review_contribution_sd = 
-    (df$ratio_code_review_contribution - mean(df$ratio_code_review_contribution, na.rm = T)) / sd(df$ratio_code_review_contribution, na.rm = T)
-    
-  
   # v.
   # ratio: issue reporting vs issue discussing
   df$ratio_issue_reports_discussion =
     (df$issue_comments / (df$issue_comments + df$no_issues_reported))
-  
-  # vi.
-  # ratio: relative issue reporting vs issue discussing
-  df$ratio_issue_reports_discussion_sd =
-    ((df$ratio_issue_reports_discussion) - mean(df$ratio_issue_reports_discussion, na.rm = T)) / sd(df$ratio_issue_reports_discussion, na.rm = T)
-  
   
   # vii.
   # ratio: technical contribution vs discussion
@@ -407,19 +394,12 @@ ops.calculate.ratios <- function(p, dt_start, dt_end, dev_core) {
   # viii.
   # ratio: relaltive technical contribution vs discussion
   
-  df$ratio_technical_discussion_sd =
-    ((df$ratio_technical_discussion) - mean(df$ratio_technical_discussion, na.rm = T)) / sd(df$ratio_technical_discussion, na.rm = T)
-  
-  
   #### 5 ###
   # i. total no. contributions p. period
   total_contributions = df$total_technicals + df$total_comments
   
   # ii. individuals' share in total project contributions
   df$contribution_extent = total_contributions/sum(total_contributions, na.rm = T)
-  
-  # ii. individuals' share in total project contributions (deviation from mean measured in sd's)
-  df$contribution_extent_sd = (df$contribution_extent - mean(df$contribution_extent, na.rm = T))/sd(df$contribution_extent, na.rm = T)
   
   return(df)
 }
@@ -636,12 +616,10 @@ get_persistency <- function(p, dt_start, dt_end, proj_start, dev_core){
   temp$periods_since_first = ceiling(interval(temp$min_date, ymd(dt_end))/days(param.analysis.period.length))
   
   active$persistency = temp$sum.active / temp$periods_since_first
-  active$persistency_sd = (active$persistency - mean(active$persistency, na.rm = T))/sd(active$persistency, na.rm = T)
-  
+
   # calculate the share of active periods in periods since the project start (experience)
   active$proj_experience = active$sum.active/periods_passed 
-  active$proj_experience_sd = (active$proj_experience - mean(active$proj_experience))/sd(active$proj_experience, na.rm = T) 
-         
+
 return(active)
 }
 
@@ -658,7 +636,33 @@ ops.assemble <- function(project, communities, ratios, collabs, persistency, net
     df[, 'collaborator_status'] = df$gha_id %in% collabs$gha_id
     df = merge(x = df, y = persistency, by = "gha_id", all.x = T)
     df$project = project
+    
+    df = standardize_measures(df)
+    
   return (df)
+}
+
+#'
+#'
+#'
+standardize_measures<- function(df){
+  
+  variables <- c("ratio_code_issue",
+                 "ratio_code_review_contribution",
+                 "ratio_issue_reports_discussion",
+                 "ratio_technical_discussion",
+                 "persistency",
+                 "contribution_extent",
+                 "proximity_prestige",
+                 "proj_experience")
+  
+  
+  for(i in 1:length(variables)){
+      new_name = paste(variables[i], "sd", sep = "_")
+      df[, new_name] = (df[, variables[i]] - mean(df[, variables[i]], na.rm = T))/sd(df[, variables[i]], na.rm = T)
+  }
+  
+  return(df)
 }
 
 #'
@@ -742,6 +746,8 @@ ops.get <- function(p, dt_start, dt_end) {
 #' saves an operationalizations csv file per project
 main <- function () {
   projects <- get_project_names()
+  
+  projects <- data.frame(names = projects[1:100,])
   
   p_count <- nrow(projects)
   

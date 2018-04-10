@@ -474,10 +474,72 @@ projects.boxplot.a_level.sd <- function(ops.a_level.sd){
     labs(title = "Distribution of activity persistency per project",
          subtitle = paste("Sample of ", sample.size, " projects")) +
     ylab("deviation from mean in standard deviations") +
-    xlab("projects ")
+    xlab("projects ") +
+    stat_summary(fun.y=mean, colour="darkred", geom="point", 
+               shape=18, size=1,show_guide = FALSE)
 
     save.plot(p, "projects_persistency_sd.png")
 }
+projects.boxplot.a_focus.sd <- function(ops.a_focus.sd){
+  sample.size = 50
+  pool = unique(ops.a_focus.sd$project)
+  
+  data.sample = sample(pool, sample.size)
+  
+  plot.data = ops.a_focus.sd[ops.a_focus.sd$project %in% data.sample,]
+  
+  ops.a_focus.sd$project <- as.factor(ops.a_focus.sd$project)
+  
+  p <- ggplot(plot.data, aes(x = project, y = code_issue)) +
+    geom_hline(aes(yintercept= -1), colour="grey", linetype="dashed") +
+    geom_hline(aes(yintercept= 0), colour="black") +
+    geom_hline(aes(yintercept= 1), colour="grey", linetype="dashed") +
+    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=0.2, notch=FALSE) +
+    theme(axis.text.x=element_blank(),
+          axis.ticks.x=element_blank())+
+    theme(panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black")) +
+    labs(title = "Distribution of code vs issue ratio per project",
+         subtitle = paste("Sample of ", sample.size, " projects")) +
+    ylab("deviation from mean in standard deviations") +
+    xlab("projects ") +
+    stat_summary(fun.y=mean, colour="darkred", geom="point", 
+                 shape=18, size=1,show_guide = FALSE)
+  
+  save.plot(p, "projects_code_issue_sd.png")
+}
+projects.boxplot.reputation.sd <- function(ops.reputation){
+    sample.size = 50
+    pool = unique(ops.reputation$project)
+    
+    data.sample = sample(pool, sample.size)
+    
+    plot.data = ops.reputation[ops.reputation$project %in% data.sample,]
+    
+    ops.reputation$project <- as.factor(ops.reputation$project)
+    
+    p <- ggplot(plot.data, aes(x = project, y = proximity_prestige)) +
+      geom_hline(aes(yintercept= -1), colour="grey", linetype="dashed") +
+      geom_hline(aes(yintercept= 0), colour="black") +
+      geom_hline(aes(yintercept= 1), colour="grey", linetype="dashed") +
+      geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=0.2, notch=FALSE) +
+      theme(axis.text.x=element_blank(),
+            axis.ticks.x=element_blank())+
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black")) +
+      labs(title = "Distribution of code vs issue ratio per project",
+           subtitle = paste("Sample of ", sample.size, " projects")) +
+      ylab("deviation from mean in standard deviations") +
+      xlab("projects ") +
+      stat_summary(fun.y=mean, colour="darkred", geom="point", 
+                   shape=18, size=1,show_guide = FALSE)
+    
+    save.plot(p, "projects_reputation_sd.png")
+  }
+
+
 
 # chi-square tests
 # target: test whether the variance in each variable is significantly different from 0
@@ -560,6 +622,8 @@ if(param.plot.ops) {
   
   if (T) {
     projects.boxplot.a_level.sd(ops.all$a_level)
+    projects.boxplot.a_focus.sd(ops.all$a_focus.sd)
+    projects.boxplot.reputation.sd(ops.all$reputation)
   }
 }
 
