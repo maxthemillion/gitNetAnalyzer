@@ -34,12 +34,12 @@ param.analysis.dev_core.min = 20/180
 
 #' retrieves all project names as list
 #'   @return list of project logins
-get_project_names <- function() {
+get_p_names <- function() {
     query = sprintf(
       "
       MATCH (o:OWNER)
       WHERE EXISTS ((o) <-- (:GHA_REPO))
-      RETURN DISTINCT o.login as project;
+      RETURN DISTINCT o.login as names;
       "
     )
     
@@ -52,8 +52,8 @@ get_project_names <- function() {
 #' get date of first contribution to the project
 #'
 #'
-get_proj_start <- function(p){
-  query_start_proj = sprintf(
+get_p_start <- function(p){
+  query = sprintf(
     "
   MATCH (o:OWNER{login: '%s'})
   WITH o
@@ -70,17 +70,17 @@ get_proj_start <- function(p){
   p
   )
   
-  proj_start = ymd(cypher(neo, query_start_proj))
+  p_start = ymd(cypher(neo, query))
   
-  return(proj_start)
+  return(p_start)
 }
 
 
 #' get date of last contribution to project
 #'
 #'
-get_proj_end <- function(p){
-  query_end_proj = sprintf(
+get_p_end <- function(p){
+  query = sprintf(
     "
   MATCH (o:OWNER{login: '%s'})
   WITH o
@@ -97,17 +97,17 @@ get_proj_end <- function(p){
   p
   )
   
-  proj_start = ymd(cypher(neo, query_end_proj))
+  p_start = ymd(cypher(neo, query))
   
-  return(proj_start)
+  return(p_start)
 }
 
 
 #' return the analysis period
 #'
-get_analysis_period <- function(p){
-  p_start = ymd(get_proj_start(p))
-  p_end = ymd(get_proj_end(p))
+get_analysis_period <- function(p, p_start){
+  p_start = ymd(p_start)
+  p_end = ymd(get_p_end(p))
   
   analysis_mid = p_start + days(ceiling(interval(p_start, p_end)/days(1)/2))
   analysis_start = analysis_mid - days(param.analysis.ops.period_length/2)
@@ -120,10 +120,10 @@ get_analysis_period <- function(p){
 #' returns project age in no. of days since first contribution
 #'
 #'
-get_project_age <- function(p, a_period){
+get_p_age <- function(p, p_start, a_period){
   
-  start = get_proj_start(p)
-  end = ymd(start + days(ceiling(a_period/days(1)/2)))
+  start = ymd(p_start)
+  end = ymd(int_start(a_period) + days(ceiling(a_period/days(1)/2)))
   
   return(interval(start, end)/days(1))
 }
@@ -230,16 +230,50 @@ get_releases <- function(p, s_period){
   return(releases)
 }
 
+#'
+#'
+#'
+get_releases_control <- function(p, p_start, a_period){
+  start = ymd(int_start(a_period)) - days(param.analysis.success.period_lenght)
+  end = ymd(int_start(a_period))
+  
+  query = sprintf(
+    "
+    MATCH (o:OWNER{login:'%s'})
+    WITH o, 
+    apoc.date.parse('%s', 'ms', 'yyyy-MM-dd') as start,
+    apoc.date.parse('%s', 'ms', 'yyyy-MM-dd') as end
+    MATCH (r:RELEASE) -[:to]->()-[:belongs_to]->(o:OWNER)
+    WITH r WHERE r.event_time >= start AND r.event_time <= end
+    RETURN COUNT(DISTINCT r) as releases_control
+    ",
+    p,
+    start,
+    end
+  )
+  
+  return(cypher(neo, query))
+}
+
+#'
+#'
+#'
+get_contributions <- function(p, a_period){
+  
+  
+}
 
 #' 
 #'
 #'
-assemble <- function(p, releases, dev_core, proj_age){
+assemble <- function(p, releases, releases_control, dev_core, p_age){
   df = data.frame(project = p,
                   releases = releases,
-                  proj_age = proj_age)
+                  releases_control = releases_control,
+                  proj_age = p_age)
   
-  df$releases[is.na(df$releases)] <- 0 # NA means project has no release, therefore set 0
+  df$releases[is.na(df$releases)] <- 0 # NA means project has no release, therefore set 
+  df$releases_control[is.na(df$releases_control)] <- 0
   
   df = cbind(df, dev_core)
   
@@ -251,25 +285,28 @@ assemble <- function(p, releases, dev_core, proj_age){
 #'
 #'
 main <- function(){
-  projects <- get_project_names()
+  projects <- get_p_names()
+  
+  # projects <- data.frame(names = projects[1:10,])
   
   result = list()
   i = 1
   
-  # projects <- data.frame(projects = projects[1:10,])
-  
-  for (p in projects$project){
+  for (p in projects$names){
     res = tryCatch({
-      a_interval <- get_analysis_period(p)
       
+      p_start <- get_p_start(p)
+      
+      a_interval <- get_analysis_period(p, p_start)
       s_interval <- get_success_period(ymd(int_start(a_interval)))
       
       releases <- get_releases(p, s_interval)
+      releases_control <- get_releases_control(p, p_start, a_interval)
+      
       dev_core <- get_dev_core(p, s_interval)
+      proj_age <- get_p_age(p, p_start, a_interval)
       
-      proj_age <- get_project_age(p, a_interval)
-      
-      res = assemble(p, releases, dev_core, proj_age)
+      res = assemble(p, releases, releases_control, dev_core, proj_age)
     },
     
     error = function(err){

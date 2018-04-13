@@ -12,12 +12,9 @@ library(gridExtra)
 library(plyr)
 library(GGally)
 
-# parameters:
-param.analysis.sample = F
-param.analysis.sample.size = 100
-
-param.plot.ops = T
-param.plot.ind = T
+# parameters
+param.plot.ops = F
+param.plot.ind = F
 param.plot.res = 300
 param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
 param.plot.width = 12
@@ -33,7 +30,7 @@ param.threshold.technical_discussion_sd = 0
 
 param.threshold.persistency_sd = 0
 param.threshold.extent_sd = 0
-param.threshold.proximity_prestige = 0
+param.threshold.proximity_prestige_sd = 0
 param.threshold.experience_sd = 0
 
 
@@ -341,7 +338,6 @@ projects.boxplot.a_level.sd <- function(ops){
 
     save.plot(p, "projects_persistency_sd.png")
 }
-
 projects.boxplot.a_focus.sd <- function(ops){
   sample.size = 50
   pool = unique(ops$project)
@@ -400,7 +396,6 @@ projects.boxplot.reputation.sd <- function(ops){
     
     save.plot(p, "projects_reputation_sd.png")
   }
-
 
 
 # chi-square tests
@@ -533,13 +528,121 @@ ind.boxplot <- function(independents){
       "code_comment_focus" = paste("rel. much code comments\ncut: ", param.threshold.code_review_contribution_sd),
       "issue_comment_focus" = paste("rel. much issue comments\ncut: ", param.threshold.issue_reports_discussion_sd),
       "techcontrib_focus" = paste("rel. much code discussion\ncut :", param.threshold.code_review_contribution_sd),
-      "rel_high_reputation" = paste("rel. much project reputation\ncut: ", param.threshold.proximity_prestige),
+      "rel_high_reputation" = paste("rel. much project reputation\ncut: ", param.threshold.proximity_prestige_sd),
       "rel_experienced" = paste("rel. experienced\ncut: ", param.threshold.experience_sd)
     )) +
     theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1))
   
   save.plot(p, "boxplot_subgroup_member_share.png")
 }
+
+#' @param var vector of variable to calculate shares of
+#' @param project vector of projects
+#' @param varname name of the resulting variable
+#' @param threshold threshold value where var will be split
+#' @param blau logical, if T also calculate Blau's index
+#'
+calculate_share <- function(var, project, varname, threshold, blau = F){
+  
+  temp = data.frame(var = var, project = project)
+  temp$L = temp$var > threshold
+  res = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T))
+  res$x = res$x/plyr::count(temp, "project")$freq
+  res <- plyr::rename(res, c("x" = varname, "Category" = "project"))
+  
+  if(blau){
+    
+    varname_new = paste(varname, "blau", sep = "_")
+    
+    # divide by 0.5 to ensure index ranges from 0 to 1 (with two categories, 0.5 is max)
+    res[, varname_new] = ((1 - (res[, varname]^2 + (1-res[, varname])^2))/0.5) 
+    
+  }
+  
+  return(res)
+}
+
+
+#'
+#'
+#'
+get.independents.new <- function(ops){
+  independents = data.frame(project = unique(ops$project)) 
+  
+  # activity persistency
+  ap = calculate_share(ops$persistency_sd, 
+                       ops$project, 
+                       "rel_persistent", 
+                       param.threshold.persistency_sd,
+                       blau = T)
+  independents <- merge(x = independents, y = ap, by = "project", all.x = T)
+  
+  # activity extent
+  ae = calculate_share(ops$contribution_extent_sd,
+                       ops$project,
+                       "rel_extensive",
+                       param.threshold.extent_sd,
+                       blau = T)
+  independents <- merge(x = independents, y = ae, by = "project", all.x = T)
+  
+  # activity focus
+  # 1
+  af.1 = calculate_share(ops$ratio_code_issue_sd,
+                         ops$project,
+                         "issue_focus",
+                         param.threshold.code_issue_sd,
+                         blau = T)
+  independents <- merge(x = independents, y = af.1, by = "project", all.x = T)
+  
+  #2
+  af.2 = calculate_share(ops$ratio_code_review_contribution_sd,
+                         ops$project,
+                         "code_comment_focus",
+                         param.threshold.code_review_contribution_sd,
+                         blau = T)
+  independents <- merge(x = independents, y = af.2, by = "project", all.x = T)
+  
+  #3
+  af.3 = calculate_share(ops$ratio_issue_reports_discussion_sd,
+                         ops$project,
+                         "issue_comment_focus",
+                         param.threshold.issue_reports_discussion_sd,
+                         blau = T)
+  independents <- merge(x = independents, y = af.3, by = "project", all.x = T)
+  
+  #4
+  af.4 = calculate_share(ops$ratio_technical_discussion_sd,
+                         ops$project,
+                         "techcontrib_focus",
+                         param.threshold.technical_discussion_sd,
+                         blau = T)
+  independents <- merge(x = independents, y = af.4, by = "project", all.x = T)
+  
+  # reputation
+  rp = calculate_share(ops$proximity_prestige_sd,
+                       ops$project,
+                       "rel_high_reputation",
+                       param.threshold.proximity_prestige_sd)
+  independents <- merge(x = independents, y = rp, by = "project", all.x = T)
+  
+  # project experience
+  pe <- calculate_share(ops$proj_experience_sd,
+                        ops$project,
+                        "rel_experienced",
+                        param.threshold.experience_sd,
+                        blau = T)
+  independents <- merge(x = independents, y = pe, by = "project", all.x = T)
+  
+  # no subgroups
+  independents$no_subgroups = (aggregate(ops$no_subgroups, by=list(Category=ops$project), FUN=mean, na.rm = T))[,-1]
+  
+  # modularity
+  independents$modularity = (aggregate(ops$modularity, by=list(Category=ops$project), FUN=mean, na.rm = T))[,-1]
+  
+  
+  return(independents)
+  }
+
 
 # generate variable matrix
 get.independents <- function(ops){
@@ -563,7 +666,7 @@ get.independents <- function(ops){
                     project = ops$project)
   temp$L = temp$code_issue_sd > param.threshold.code_issue_sd
   ind$issue_focus  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/plyr::count(temp, "project"))[,-1]
-  
+  ind$issue_focus_blau = (1-(ind$issue_focus^2 + (1-ind$issue_focus)^2)) * sd(temp$code_issue_sd, na.rm = T)
   
   # 2. 
   temp = data.frame(code_review_contribution_sd = ops$ratio_code_review_contribution_sd,
@@ -588,7 +691,7 @@ get.independents <- function(ops){
   # 1. proximity prestige 
   temp = data.frame(proximity_prestige = ops$proximity_prestige_sd,
                     project = ops$project)
-  temp$L = temp$proximity_prestige > param.threshold.proximity_prestige
+  temp$L = temp$proximity_prestige > param.threshold.proximity_prestige_sd
   ind$rel_high_reputation  = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/plyr::count(temp, "project"))[,-1]
   # 2. ...
   
@@ -599,7 +702,10 @@ get.independents <- function(ops){
   ind$rel_experienced = (aggregate(temp$L, by=list(Category=temp$project), FUN=sum, na.rm = T)/plyr::count(temp, "project"))[,-1]
   
   # no subgroups
+  ind$no_subgroups = (aggregate(ops$no_subgroups, by=list(Category=ops$project), FUN=mean, na.rm = T))[,-1]
   
+  # modularity
+  ind$modularity = (aggregate(ops$modularity, by=list(Category=ops$project), FUN=mean, na.rm = T))[,-1]
   
   return(ind)
 }
@@ -634,7 +740,8 @@ if(param.plot.ops) {
 
 
 # get all independents
-independents <- get.independents(ops)
+independents <- get.independents.new(ops)
+
 
 # save independents to csv
 file.path = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/independents.csv"

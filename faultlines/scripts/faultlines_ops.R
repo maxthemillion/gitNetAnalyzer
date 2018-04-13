@@ -670,6 +670,8 @@ get_communities <- function(graph_u){
   communities = cluster_louvain(graph_u)  
   com <- cbind(V(graph_u)$name, communities$membership)
   com <- setNames(as.data.frame(com), c("gha_id", "group"))
+  com$no_subgroups <- length(unique(com$group))
+  com$modularity <- modularity(communities)
   return(com)
 }
 
@@ -745,7 +747,7 @@ ops.get <- function(p, dt_start, dt_end) {
 main <- function () {
   projects <- get_project_names()
   
-  # projects <- data.frame(names = projects[1:100,])
+  # projects <- data.frame(names = projects[1:10,])
   
   p_count <- nrow(projects)
   
