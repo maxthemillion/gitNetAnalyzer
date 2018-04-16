@@ -1,5 +1,4 @@
-# Script calculates variable operationalizations per project and saves them 
-# to csv files separately
+# Script calculates variable operationalizations per project 
 
 #### libraries ####
 .libPaths(c(.libPaths(), '/home/rahnm/R/lib'))
@@ -54,7 +53,7 @@ param.analysis.filter.rule = "both"
 
 # number of contributions. defines how many contributions must be made in total 
 # such that a developer belongs to the dev_core
-param.analysis.dev_core.min = 10/180
+param.analysis.dev_core.min = 50/180
 
 #### queries ####
 

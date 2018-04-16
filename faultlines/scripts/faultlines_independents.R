@@ -1,27 +1,29 @@
 # script analyzes variable operationalizations
-#
-# .libPaths(c(.libPaths(), '/home/rahnm/R/lib'))
 
+#### libraries ####
 # library(multcomp)
-library(futile.logger)
 library(data.table)
 library(EnvStats)
 library(ggplot2)
 library(reshape2)
 library(gridExtra)
 library(plyr)
-library(GGally)
+#library(GGally)
 
-# parameters
+#### parameters ####
+param.dataset = "sp180_c20" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
+
 param.plot.ops = F
 param.plot.ind = F
 param.plot.res = 300
-param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
 param.plot.width = 12
 param.plot.height = 12
 param.plot.units = "cm"
 
-param.ops.import = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/variation"
+param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
+param.plot.out =  paste(param.path.root, "analysis/", param.dataset, "/variation/", sep = "")
+param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all.csv", sep = "")
+param.independents.out = paste(param.path.root, "data/models/", param.dataset, "/", sep = "")
 
 param.threshold.code_issue_sd = 0
 param.threshold.code_review_contribution_sd = 0
@@ -42,8 +44,7 @@ theme_update(axis.text = element_text(size = rel(0.5)))
 
 #'import ops file and convert to numeric/factor
 coerce_new <- function(){
-  file = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/variation/ops_all.csv"
-  ops <- read.csv(file)
+  ops <- read.csv(param.ops.in)
   
   return(ops)
 }
@@ -67,7 +68,7 @@ calc.col_var <- function(df) {
 #' @param name  filename to save the plot to
 save.plot <- function(plot, name){
   png(
-    filename = paste(param.plot.exp, name, sep = ""),
+    filename = paste(param.plot.out, name, sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -152,7 +153,7 @@ ops.boxplot.a_focus.sd <- function(ops){
 ops.boxplot.a_level.extent <- function(ops){
   
   png(
-    filename = paste(param.plot.exp, "boxplot_activity_extent.png", sep = ""),
+    filename = paste(param.plot.out, "boxplot_activity_extent.png", sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -187,7 +188,7 @@ ops.boxplot.a_level.extent <- function(ops){
 ops.boxplot.a_level.persistency <- function(ops){
   
   png(
-    filename = paste(param.plot.exp, "boxplot_activity_persistency.png", sep = ""),
+    filename = paste(param.plot.out, "boxplot_activity_persistency.png", sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -222,7 +223,7 @@ ops.boxplot.a_level.persistency <- function(ops){
 ops.boxplot.reputation <- function(ops){
   
   png(
-    filename = paste(param.plot.exp, "boxplot_reputation.png", sep = ""),
+    filename = paste(param.plot.out, "boxplot_reputation.png", sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -274,7 +275,7 @@ ops.pairplot.simple <- function(ops) {
                  "ratio_technical_discussion")]
   
   png(
-    filename = paste(param.plot.exp, "pairplot_ops_simple.png", sep = ""),
+    filename = paste(param.plot.out, "pairplot_ops_simple.png", sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -467,7 +468,7 @@ ops.test.var.print <- function(res){
 ind.pairs <- function(independents){
   
   png(
-    filename = paste(param.plot.exp, "pairs_independents.png", sep = ""),
+    filename = paste(param.plot.out, "pairs_independents.png", sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -742,11 +743,9 @@ if(param.plot.ops) {
 # get all independents
 independents <- get.independents.new(ops)
 
-
 # save independents to csv
-file.path = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/independents.csv"
+file.path = paste(param.independents.out, "independents.csv", sep = "")
 write.csv(independents, file = file.path, row.names = F)
-
 
 if(param.plot.ind){
   ind.pairs(independents)

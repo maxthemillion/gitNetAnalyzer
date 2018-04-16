@@ -1,66 +1,59 @@
-library(futile.logger)
+#### libraries ####
 library(data.table)
 library(plyr)
 library(ggplot2)
 library(gridExtra)
+library(metap)
 
+
+#### parameters ####
 param.analysis.all = F                          # specifies, whether all or only a single project should be imported and analysed
-param.analysis.single = 'waffleio'              # name of a project which should be imported, when param.analysis.all = F
-param.analysis.groups.minsize = 0               # min group size which qualifies for further analysis
-param.analysis.groups.includeResiduals = TRUE   # if T, all remaining groups which are smaller than the specified minsize will be aggregated and analyzed as well
+param.analysis.groups.minsize = 1               # min group size which qualifies for further analysis
+
+param.dataset = "sp180_c10" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
 
 param.plot.res = 300
-param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
 param.plot.width = 12
 param.plot.height = 12
 param.plot.units = "cm"
 
-param.ops.import = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/variation"
+param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
+param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all.csv", sep = "")
+param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/variance/tables/", sep = "")
+param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/variance/plots/", sep = "")
 
+#### import ####
 #' import operationalization csv file
 #'
 #' @param f:  project name
 #' @return operationalizations data frame including group information
 ops.import <- function(f) {
-  file = paste(param.ops.import, "/op_df_", f, ".csv", sep = "")
-  
-  ops <- read.csv(file)
+
+  ops <- read.csv(param.ops.in)
 
   return(ops)
 }
 
 #' selects groups according to project size
-#'
-#' @param n     scalar of type numeric. Determines how many groups should be selected
+#' @param s     scalar of type numeric. Determines the minimum group size
 #' 
-ops.groups.select <- function(ops, n = NULL, s = NULL){
-  select_by_size = TRUE
-  if (is.null(n) && is.null(s)){
-    s = 20
+ops.groups.select <- function(ops, s){
+  
+  select <- function(x, group.selection){
     
-  } else if (!is.null(n) && is.null(s)) {
-    select_by_size = FALSE
-  } 
-  
-  group.count = ddply(ops,"group", summarize, count=length(unique(gha_id)))
-  
-  group.count = group.count[order(-group.count$count),] 
-  
-  if (select_by_size){
-    L = group.count$count >= s
-    group.info = group.count$group[L]
-  } else {
-    group.info = head(group.count$group, n = n)    
+    y = group.selection[group.selection["project"] == x[1] ,]
+    
+    return(as.numeric(x[2]) %in% y$group)
   }
   
-  if(param.analysis.groups.includeResiduals){
-    L = ! ops$group %in% group.info
-    ops$group[L] = -999
-    group.info[length(group.info) + 1] = -999 
-  }
+  group.count = ddply(ops, c("project", "group"), summarize, count=length(unique(gha_id)))
+
+  L = group.count$count >= s
+  group.selection = group.count[L ,]
   
-  ops.L = ops$group %in% group.info
-  ops.new = ops[ops.L,]
+  ops.L = apply(ops[, c("project", "group")], 1, function(x) select(x, group.selection))
+
+  ops.new = ops[ops.L ,]
   
   return(ops.new)
 }
@@ -70,7 +63,7 @@ ops.groups.select <- function(ops, n = NULL, s = NULL){
 #' @param name  filename to save the plot to
 save.plot <- function(plot, name){
   png(
-    filename = paste(param.plot.exp, name, sep = ""),
+    filename = paste(param.plot.out, name, sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -83,97 +76,46 @@ save.plot <- function(plot, name){
 }
 
 
-#' performs an anova for the specified variable and tests anova assumptions
-#'
-#'   @param op      operationalization dataframe
-#'   @param var     column name of the variable to analyze
-#' 
-perform_anova <- function(op, var) {
-  # -- ANOVA --
-  # http://www.sthda.com/english/wiki/one-way-anova-test-in-r#what-is-one-way-anova-test
-  # estimate anova on various operationalizations
-  res.aov <- aov(op[, var] ~ op$group)
-  summary(res.aov)
-  
-  # since we do not know, which groups differ, calculate Tukey Honest Significant Differences
-  TukeyHSD(res.aov)
-  
-  # further comparisons can be made with package 'multcomp'
-  # https://cran.r-project.org/web/packages/multcomp/multcomp.pdf
-  
-  # check assumptions of ANOVA
-  # 1. homogeieity of variance
-  # plot should show no relationship between residuals and fitted values
-  
-  png(
-    filename = paste(param.plot.exp, "plot_aov_homogeneity.png", sep = ""),
-    res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
-    units = param.plot.units
-  )
-  plot(res.aov, 1)
-  dev.off()
-  
-  # -- Levene test --
-  # test must not to be signifiant in order to prove that variances in subgroups are homogenous
-  # (p-value > 0.05)
-  leveneTest(op[, var] ~ op$group)
-  
-  # 2. normality assumption
-  png(
-    filename = paste(param.plot.exp, "plot_aov_normality.png", sep = ""),
-    res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
-    units = param.plot.units
-  )
-  plot(res.aov, 2)
-  dev.off()
-  
-  # shapiro wilk test
-  aov_residuals <- residuals(object = res.aov)
-  shapiro.test(x = aov_residuals)
+subgroup.test <- function(sg){
+  out <- tryCatch(
+    {
+      r = data.frame(p_persistency_sd = kruskal.test(sg$persistency_sd ~ sg$group)$p.value,
+                     p_extent_sd = kruskal.test(sg$contribution_extent_sd ~ sg$group)$p.value,
+                     p_proj_experience_sd = kruskal.test(sg$proj_experience_sd ~ sg$group)$p.value,
+                     p_proximity_prestige_sd = kruskal.test(sg$proximity_prestige_sd ~ sg$group)$p.value,
+                     p_ratio_issue_reports_discussion_sd = kruskal.test(sg$ratio_issue_reports_discussion_sd ~ sg$group)$p.value,
+                     p_ratio_code_issue_sd = kruskal.test(sg$ratio_code_issue_sd ~ sg$group)$p.value,
+                     p_ratio_code_review_contribution_sd = kruskal.test(sg$ratio_code_review_contribution_sd ~ sg$group)$p.value,
+                     p_ratio_technical_discussion_sd = kruskal.test(sg$ratio_technical_discussion_sd ~ sg$group)$p.value
+      ) 
+    },
+    error=function(cond) {
+#      message(cond)
+      r <- data.frame(p_persistency_sd = NA,
+                      p_extent_sd = NA,
+                      p_proj_experience_sd = NA,
+                      p_proximity_prestige_sd = NA,
+                      p_ratio_issue_reports_discussion_sd = NA,
+                      p_ratio_code_issue_sd = NA,
+                      p_ratio_code_review_contribution_sd = NA,
+                      p_ratio_technical_discussion_sd = NA)
+      return(r)
+    }
+  )    
+  return(out)
 }
-
-# performs a kruskal test for the specified variable
-# parameters:
-#     op      operationalization data frame
-#     var     column name of the variable to analyze
-# returns: -
-perform_kruskal <- function (op, var) {
-  # -- Kruskal Test --
-  # to be used, when assumptions of one-way anova are not met
-  # http://www.sthda.com/english/wiki/kruskal-wallis-test-in-r
-  # estimate kruskal test on various operationalizations
-  res.kruskal.c_i_ratio <- kruskal.test(op[, var] ~ op$group)
-  #...
-  
-  # since we do not know, which groups differ, calculate pairwise wilcox test
-  pairwise.wilcox.test(op[, var], op$group, p.adjust.method = "BH")
-  #...
-  
-}
-
 
 main <- function(){
-  if(param.analysis.all) {
-    
-    #TODO
-    
-    
-  } else {
-    # import project
-    ops <- ops.import(param.analysis.single)
-    
-    # select groups
-    #
-    # ops <- ops.groups.select(ops, n = 2)
-    ops.sel <- ops.groups.select(ops, s = param.analysis.groups.minsize)
-    
-    ops.ratios.simple.boxplot(ops.sel)
-    ops.ratios.rel.boxplot(ops.sel)
-    }
+  
+  ops <- ops.import()
+  
+  ops.sel <- ops.groups.select(ops, s = param.analysis.groups.minsize)
+  
+  test.res <- ddply(ops.sel, "project", function(x) subgroup.test(x)) 
+  
+  sum.res <- apply(test.res[!is.na(test.res$p_persistency_sd),-1], 2, sumlog)
+  
+  print(sum.res)
 }
 
 main()

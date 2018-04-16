@@ -6,6 +6,8 @@ library(MASS)
 library(stargazer)
 
 #### parameters ####
+param.dataset = "sp180_c20" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
+
 param.plot.facets = F
 param.plot.correlation = F
 param.plot.hist = F
@@ -14,14 +16,17 @@ param.glm.control = glm.control(epsilon = 1e-8, maxit = 100, trace = FALSE)
 
 param.m.add_const_to_releases = F # adding a constant would violate distribution assumption, leave F
 param.m.transform.blau = T
-param.m.transform.controls = T
+param.m.transform.controls = F
+
+param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
+param.m.in = paste(param.path.root, "data/models/", param.dataset, "/", sep = "")
+param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/models/tables/", sep = "")
+param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/models/plots/", sep = "")
 
 param.plot.res = 300
-param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
 param.plot.width = 12
 param.plot.height = 12
 param.plot.units = "cm"
-
 
 old <- theme_set(theme_gray())
 theme_update(axis.title = element_text(size = rel(0.65)))
@@ -33,13 +38,14 @@ theme_update(axis.text = element_text(size = rel(0.5)))
 #' @return data frame containing all model variables
 #'
 import.variables <- function(){
+  
   # read independent variables
-  independents <- read.csv("/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/independents.csv")
+  independents <- read.csv(paste(param.m.in, "independents.csv", sep = ""))
   
   # read dependent variables
-  dependents <- read.csv("/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/success.csv")
+  dependents <- read.csv(paste(param.m.in, "success.csv", sep = ""))
   
-  ci <- read.csv("/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/travis.csv")
+  ci <- read.csv(paste(param.path.root, "data/models/travis.csv", sep =""))[, c("project", "has_travis")]
   
   # merge
   res = merge(x = independents, y = dependents, by = "project")
@@ -160,7 +166,6 @@ hist.indep <- function(df){
   save.plot(p, "models/histogram_independents_blau.png")
   
 }
-
 
 #'
 #'
@@ -312,7 +317,7 @@ generate.facet.no_non_core <- function(df){
 #' @param name  filename to save the plot to
 save.plot <- function(plot, name){
   png(
-    filename = paste(param.plot.exp, name, sep = ""),
+    filename = paste(param.plot.out, name, sep = ""),
     res = param.plot.res,
     width = param.plot.width,
     height = param.plot.height,
@@ -338,6 +343,7 @@ plot.facets <- function(oss){
 #'
 #'
 c.heatmap <- function(df, title, subtitle = NULL, file.path, reorder = T){
+  
   c_m = cor(df, use = "pairwise.complete.obs")
   # stargazer(c, type = "text", out = paste(param.plot.exp, "models/correlation_1_as_is.txt", sep  =""))
   
@@ -406,7 +412,7 @@ transform.blau <- function(oss){
     "techcontrib_focus_blau",
     "rel_experienced_blau",
     "issue_focus_blau")
-
+  
   for (i in 1:length(names)){
     oss[, names[[i]] ] <- log(((1 - oss[, names[[i]] ]) * 100) + 1)
   }
@@ -419,7 +425,7 @@ transform.blau <- function(oss){
     labs(title = "Distribution of transformed blau",
          subtitle = "log(((1 - x) * 100) + 1)")
   
-  save.plot(p, "models/histogram_blau_transf.png")
+  save.plot(p, "histogram_blau_transf.png")
   
   return(oss)
 }
@@ -437,11 +443,12 @@ transform.controls<- function(oss){
     geom_histogram() +
     facet_wrap(~variable, scales = "free") +
     labs(title = "Distribution of control variables")
-  save.plot(p, "models/histogram_controls.png")
+  save.plot(p, "histogram_controls.png")
   
   # oss$releases_control <- as.factor(oss$releases_control > 0)
   
-  oss$proj_size <- (oss$proj_size + 1)
+  oss$proj_size <- log(oss$proj_size + 1)
+  
   # oss$proj_age <- log(oss$proj_age + 1)
   
   dfmelt <- melt(oss[, c("releases_control",
@@ -453,7 +460,7 @@ transform.controls<- function(oss){
     facet_wrap(~variable, scales = "free") +
     labs(title = "Distribution of control variables",
          subtitle = "controls log-transformed")
-  save.plot(p, "models/histogram_controls_log.png")
+  save.plot(p, "histogram_controls_log.png")
   
   return(oss)
 }
@@ -475,7 +482,7 @@ m.to.table <- function(m_list, title, m_name){
   }
   
   if(param.m.transform.controls){
-    m_name = paste(m_name, "ctf", sep = "_")
+    m_name = paste(param.dataset, m_name, "ctf", sep = "_")
     title = paste(title, " - log(controls)")
   }
   
@@ -483,7 +490,7 @@ m.to.table <- function(m_list, title, m_name){
             type = "text", 
             title = title,
             add.lines = list(p_d),
-            out = paste(param.plot.exp, "models/", m_name, ".txt", sep = ""))
+            out = paste(param.table.out, m_name, ".txt", sep = ""))
 }
 
 #'
@@ -497,7 +504,7 @@ pearson.dispersion <- function(m){
 
 #### release models ####
 estimate.releases.glmnb.blau <- function(oss){
-
+  
   if(param.m.add_const_to_releases){
     oss$releases <- oss$releases + 1
     oss$releases_control <- oss$releases_control + 1
@@ -660,7 +667,7 @@ estimate.releases.glmnb.blau <- function(oss){
                   rel_experienced_blau +
                   (releases_control) +
                   proj_size
-#                  + proj_age
+                #                  + proj_age
                 ,
                 data = oss,
                 control = param.glm.control)
@@ -669,17 +676,53 @@ estimate.releases.glmnb.blau <- function(oss){
     return(list(m, step))
   }
   
-  out <- m.releases.glmnb.blau.2(oss)    # only predictors
-  out <- append(out, list(m.releases.glmnb.blau.3(oss)[[1]]))    # 
-#  out <- append(out, list(m.releases.glmnb.blau.4(oss)[[1]]))    # 
-  out <- append(out, list(m.releases.glmnb.blau.5(oss)[[1]]))    # 
-  out <- append(out, m.releases.glmnb.blau.6(oss))    # all shares and controls
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' 
+  #' dependent variable: 
+  #' - releases + 1 ***
+  #' 
+  #' predictors: 
+  #' - all faultine ratios except issue comment focus ***
+  #' 
+  #' controls:
+  #' - project age
+  #' - releases control + 1
+  #' - project size 
+  #'
+  m.releases.glmnb.blau.7 <- function(oss){
+    m <- glm.nb((releases) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  # issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  (releases_control) +
+                  proj_size
+                # + proj_age
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
   
-    m.to.table(out, 
+  out <- list(m.releases.glmnb.blau.2(oss)[[1]])  
+  out <- append(out, list(m.releases.glmnb.blau.3(oss)[[1]]))
+  # out <- append(out, list(m.releases.glmnb.blau.4(oss)[[1]]))    # 
+  out <- append(out, list(m.releases.glmnb.blau.5(oss)[[1]]))    # 
+  out <- append(out, list(m.releases.glmnb.blau.6(oss)[[1]]))    # all shares and controls
+  out <- append(out, m.releases.glmnb.blau.7(oss))    # all shares and controls
+  
+  m.to.table(out, 
              title = "Release models", 
              m_name = "glmnb_releases_blau"
-             ) 
-  
+  ) 
 }
 
 estimate.releases.glmnb.standard <- function(oss){
@@ -775,7 +818,7 @@ estimate.releases.glmnb.standard <- function(oss){
                   techcontrib_focus +
                   rel_high_reputation +
                   rel_experienced
-#                 + proj_age
+                #                 + proj_age
                 ,
                 data = oss,
                 control = param.glm.control)
@@ -840,7 +883,7 @@ estimate.releases.glmnb.standard <- function(oss){
                   rel_high_reputation +
                   rel_experienced +
                   (releases_control) +
-#                  proj_age +
+                  #                  proj_age +
                   proj_size
                 ,
                 data = oss,
@@ -850,11 +893,48 @@ estimate.releases.glmnb.standard <- function(oss){
     return(list(m, step))
   }
   
-  out <- m.releases.glmnb.standard.2(oss)    # only predictors on (releases+1)
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' dependent variable: 
+  #' - releases + 1
+  #' 
+  #' predictors: 
+  #' - all faultine ratios except issue_focus
+  #' 
+  #' controls:
+  #' - project age
+  #' - proj size
+  #' - releases control
+  #'
+  m.releases.glmnb.standard.7 <- function(oss){
+    m <- glm.nb((releases) ~
+                  rel_persistent + 
+                  rel_extensive + 
+                  issue_focus +
+                  code_comment_focus +
+                  # issue_comment_focus +
+                  techcontrib_focus +
+                  rel_high_reputation +
+                  rel_experienced +
+                  (releases_control) +
+                  # nproj_age +
+                  proj_size
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  out <- list(m.releases.glmnb.standard.2(oss)[[1]])    # only predictors on (releases+1)
   out <- append(out, list(m.releases.glmnb.standard.3(oss)[[1]]))    # include releases_control
-#  out <- append(out, list(m.releases.glmnb.standard.4(oss)[[1]]))    # include proj_age
+  #  out <- append(out, list(m.releases.glmnb.standard.4(oss)[[1]]))    # include proj_age
   out <- append(out, list(m.releases.glmnb.standard.5(oss)[[1]]))    # include proj_size
-  out <- append(out, m.releases.glmnb.standard.6(oss))    # all shares and controls
+  out <- append(out, list(m.releases.glmnb.standard.6(oss)[[1]]))    # all shares and controls
+  out <- append(out, m.releases.glmnb.standard.7(oss))
+  
   
   m.to.table(out, 
              title = "Release models (standard indicators)",
@@ -876,7 +956,7 @@ estimate.noncore.glmnb.blau <- function(oss){
   #' controls: 
   #' - project size ***
   #'
-  m.non_core.glmnb.blau.1 <- function(oss){
+  m.noncore.glmnb.blau.1 <- function(oss){
     m <- glm.nb((no_non_core) ~
                   rel_persistent_blau + 
                   rel_extensive_blau + 
@@ -910,7 +990,7 @@ estimate.noncore.glmnb.blau <- function(oss){
   #' controls: 
   #' - project age ***
   #'
-  m.non_core.glmnb.blau.2 <- function(oss){
+  m.noncore.glmnb.blau.2 <- function(oss){
     m <- glm.nb((no_non_core) ~
                   rel_persistent_blau + 
                   rel_extensive_blau + 
@@ -920,7 +1000,7 @@ estimate.noncore.glmnb.blau <- function(oss){
                   techcontrib_focus_blau +
                   rel_high_reputation +
                   rel_experienced_blau
-#                 + proj_age
+                  # + proj_age
                 ,
                 data = oss,
                 control = param.glm.control)
@@ -943,7 +1023,7 @@ estimate.noncore.glmnb.blau <- function(oss){
   #' - project age
   #' - project size 
   #'
-  m.non_core.glmnb.blau.3 <- function(oss){
+  m.noncore.glmnb.blau.3 <- function(oss){
     m <- glm.nb((no_non_core) ~
                   rel_persistent_blau + 
                   rel_extensive_blau + 
@@ -954,7 +1034,7 @@ estimate.noncore.glmnb.blau <- function(oss){
                   rel_high_reputation +
                   rel_experienced_blau +
                   proj_size
-#                 + proj_age
+                  # + proj_age
                 ,
                 data = oss,
                 control = param.glm.control)
@@ -965,21 +1045,55 @@ estimate.noncore.glmnb.blau <- function(oss){
     return(list(m, step))
   }
   
-#  out <- m.non_core.glmnb.blau.1(oss)    # only predictors
-#  out <- append(out, list(m.non_core.glmnb.blau.2(oss)[[1]]))    # 
-#  out <- append(out, m.non_core.glmnb.blau.3(oss))        # incl. controls
-  out <-  m.non_core.glmnb.blau.3(oss)
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' dependent variable: 
+  #' - number of non-core contributors 
+  #' 
+  #' predictors: 
+  #' - all but issue_focus_blau ***
+  #' 
+  #' controls:
+  #' - project age
+  #' - project size 
+  #'
+  m.noncore.glmnb.blau.4 <- function(oss){
+    m <- glm.nb((no_non_core) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  # issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  proj_size
+                  # + proj_age
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    p_disp <- pearson.dispersion(m)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
   
+  #  out <- m.non_core.glmnb.blau.1(oss)    # only predictors
+  #  out <- append(out, list(m.non_core.glmnb.blau.2(oss)[[1]]))    # 
+  #  out <- append(out, m.non_core.glmnb.blau.3(oss))        # incl. controls
+  out <-  m.noncore.glmnb.blau.3(oss)
+  out <- append(out, m.noncore.glmnb.blau.4(oss))
   
   m_name = "glmnb_non_core_blau"
-    
+  
   m.to.table(out, 
              title = "Community engagement models", 
              m_name = m_name
   ) 
   
 }
-
 
 #### CI models ####
 estimate.ci_releases.glmnb.blau <- function(oss){
@@ -1213,7 +1327,6 @@ estimate.ci_noncore.glmnb.blau <- function(oss){
   #' Model specification:
   #' Negative Binomial GLM
   #' 
-  #' 
   #' dependent variable: 
   #' - number of non-core contributors 
   #' 
@@ -1242,7 +1355,6 @@ estimate.ci_noncore.glmnb.blau <- function(oss){
     step <- stepAIC(m, direction="both")
     return(list(m, step))
   }
-  
   
   #' Model specification:
   #' Negative Binomial GLM
@@ -1293,16 +1405,21 @@ estimate.ci_noncore.glmnb.blau <- function(oss){
              title = "Community engagement models - controlling for CI", 
              m_name = m_name
   ) 
-  
 }
 
-
 #### main ####
-
 main <- function(){
   oss = import.variables()
   independents <- get_independents(oss)
   dependents <- get_dependents(oss)
+  
+  if(param.m.transform.blau){
+    oss = transform.blau(oss)
+  }
+  
+  if(param.m.transform.controls){
+    oss = transform.controls(oss)
+  }
   
   # plot distributions
   if(param.plot.hist){
@@ -1312,39 +1429,36 @@ main <- function(){
   
   if(param.plot.correlation){
     # create correlation matrices
-    c.heatmap(independents[, -1], 
-              title = "Pearson correlation",
-              subtitle = "independent variables",
-              file.path = "models/cor_independents.png")
+    # c.heatmap(independents[, -1], 
+    c.heatmap(subset(independents, select = -c(project, 
+                                               issue_comment_focus, 
+                                               issue_focus, 
+                                               rel_experienced,
+                                               rel_persistent,
+                                               code_comment_focus,
+                                               techcontrib_focus
+    )),
+    title = "Pearson correlation",
+    subtitle = "independent variables",
+    file.path = "cor_independents.png")
     
-    c.heatmap(independents[, c("issue_focus", "issue_comment_focus", "code_comment_focus", "techcontrib_focus")], 
+    c.heatmap(independents[, c("issue_focus_blau", 
+                               "issue_comment_focus_blau", 
+                               "code_comment_focus_blau", 
+                               "techcontrib_focus_blau")], 
               title = "Pearson correlation",
               subtitle = "subgroup shares",
-              file.path = "models/cor_subgroup_shares.png",
+              file.path = "cor_subgroup_shares.png",
               reorder = F)
     
     c.heatmap(dependents[, -1],
               title = "Pearson correlation",
               subtitle = "dependent variables",
-              file.path = "models/cor_dependents.png")
-    
-    c.heatmap(oss[, -1],
-              title = "Pearson correlation",
-              subtitle = "all variables",
-              file.path = "models/cor_all.png",
-              reorder = F)
+              file.path = "cor_dependents.png")
   }
   
   if(param.plot.facets){ 
     plot.facets(oss)
-  }
-  
-  if(param.m.transform.blau){
-    oss <- transform.blau(oss)
-  }
-  
-  if(param.m.transform.controls){
-    oss = transform.controls(oss)
   }
   
   # estimate some models
