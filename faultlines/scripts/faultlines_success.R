@@ -1,4 +1,4 @@
-
+#### libraries ####
 .libPaths(c(.libPaths(), '/home/rahnm/R/lib'))
 library(RNeo4j)
 library(dplyr)
@@ -8,7 +8,7 @@ library(reshape2)
 library(data.table)
 
 
-
+#### parameters ####
 neo = startGraph("http://localhost:7474/db/data/",
                  username = "max",
                  password = "1111")
@@ -16,21 +16,21 @@ neo = startGraph("http://localhost:7474/db/data/",
 flog.threshold(INFO)
 flog.appender(appender.file('/home/rahnm/R/log/faultlines_success.log'))
 
-# lenght of one standard period in days
-param.analysis.period.length = 30 
-
 # number of days for which operationalizations should be calculated
 param.analysis.ops.period_length = 180
 
 # number of days for which success measures should be retrieved
-param.analysis.success.period_lenght  = 90
+param.analysis.success.period_lenght  = 180
 
 # number of days to spare between ops and success measures
 param.analysis.success.time_lag = 0
 
 # number of contributions per day that must be made on average 
 # such that a developer belongs to the dev_core
-param.analysis.dev_core.min = 20/180
+param.analysis.dev_core.min = 10/180
+
+
+#### cypher queries ####
 
 #' retrieves all project names as list
 #'   @return list of project logins
@@ -50,7 +50,8 @@ get_p_names <- function() {
 
 
 #' get date of first contribution to the project
-#'
+#' @param p project name
+#' @return date of first contribution
 #'
 get_p_start <- function(p){
   query = sprintf(
@@ -77,7 +78,8 @@ get_p_start <- function(p){
 
 
 #' get date of last contribution to project
-#'
+#' @param p project name
+#' @return date of last contribution
 #'
 get_p_end <- function(p){
   query = sprintf(
@@ -104,6 +106,8 @@ get_p_end <- function(p){
 
 
 #' return the analysis period
+#' @param p project name
+#' @param p_start date of first contribution to the project
 #'
 get_analysis_period <- function(p, p_start){
   p_start = ymd(p_start)
@@ -118,7 +122,9 @@ get_analysis_period <- function(p, p_start){
 
 
 #' returns project age in no. of days since first contribution
-#'
+#' @param p project name
+#' @param p_start date of first contribution to the project
+#' @param a_period analysis period (provided as lubridate interval)
 #'
 get_p_age <- function(p, p_start, a_period){
   
@@ -131,6 +137,9 @@ get_p_age <- function(p, p_start, a_period){
 #' returns a count of how many core and non core developers participate in the project
 #' dev_core criteria:
 #' developer has more than x contributions during total project lifetime
+#' @param p project name
+#' @param s_period success period (provided as lubridated interval)
+#' 
 get_dev_core <- function(p, s_period){
     start = ymd(int_start(s_period))
     end = ymd(int_end(s_period))
@@ -186,8 +195,9 @@ get_dev_core <- function(p, s_period){
   return(result)
 }
 
-#' 
-#'
+#' provides the period for which success measures should be calculated
+#' @param a_start start date of analysis period
+#' @return success period (as lubridate interval)
 #'
 get_success_period <- function(a_start){
   a_start = ymd(a_start)
@@ -204,9 +214,11 @@ get_success_period <- function(a_start){
   
 }
 
-#' gets the number of releases
+#' provides the number of releases
 #' @param p project name
 #' @param a_start date of the analysis period start
+#' @return number of releases
+#' 
 get_releases <- function(p, s_period){
   start = ymd(int_start(s_period))
   end = ymd(int_end(s_period))
@@ -230,10 +242,12 @@ get_releases <- function(p, s_period){
   return(releases)
 }
 
+#' provides the number of releases during the control period
+#' @param p project name
+#' @param a_period analysis period (provided as lubridate interval)
+#' @return number of releases during the control period
 #'
-#'
-#'
-get_releases_control <- function(p, p_start, a_period){
+get_releases_control <- function(p, a_period){
   start = ymd(int_start(a_period)) - days(param.analysis.success.period_lenght)
   end = ymd(int_start(a_period))
   
@@ -255,6 +269,8 @@ get_releases_control <- function(p, p_start, a_period){
   return(cypher(neo, query))
 }
 
+
+
 #'
 #'
 #'
@@ -263,8 +279,15 @@ get_contributions <- function(p, a_period){
   
 }
 
-#' 
-#'
+#### main part ####
+
+#' merges all resources to a single data frame
+#' @param p project name
+#' @param releases number of releases in success period
+#' @param releases_control number of releases in control period
+#' @param dev_core number of core developers
+#' @param p_age project age in days
+#' @return merged data frame
 #'
 assemble <- function(p, releases, releases_control, dev_core, p_age){
   df = data.frame(project = p,
@@ -301,7 +324,7 @@ main <- function(){
       s_interval <- get_success_period(ymd(int_start(a_interval)))
       
       releases <- get_releases(p, s_interval)
-      releases_control <- get_releases_control(p, p_start, a_interval)
+      releases_control <- get_releases_control(p, a_interval)
       
       dev_core <- get_dev_core(p, s_interval)
       proj_age <- get_p_age(p, p_start, a_interval)

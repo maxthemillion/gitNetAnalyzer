@@ -30,7 +30,7 @@ theme_update(axis.text = element_text(size = rel(0.5)))
 #### import ####
 
 #' imports all variables (dependents and independents)
-#'
+#' @return data frame containing all model variables
 #'
 import.variables <- function(){
   # read independent variables
@@ -39,14 +39,20 @@ import.variables <- function(){
   # read dependent variables
   dependents <- read.csv("/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/success.csv")
   
+  ci <- read.csv("/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/travis.csv")
+  
   # merge
   res = merge(x = independents, y = dependents, by = "project")
+  res = merge(x = res, y=ci, by = "project")
+  
+  res$has_travis = as.factor(res$has_travis)
   
   return(res)
 }
 
-#'
-#'
+#' separates dependent variables for visualization purposes
+#' @param oss data frame containing all model variables
+#' @return data frame containing dependent variables
 #'
 get_dependents <- function(oss){
   dependents = oss[, c("project", 
@@ -57,8 +63,9 @@ get_dependents <- function(oss){
   return(dependents)
 }
 
-#'
-#'
+#' separates independent variables for visualization purposes
+#' @param oss data frame containing all model variables
+#' @return data frame containing predictor variables
 #'
 get_independents <- function(oss){
   independents = oss[, c("project", 
@@ -79,11 +86,12 @@ get_independents <- function(oss){
                          "rel_experienced_blau",
                          "no_subgroups",
                          "modularity",
-                         # is NA for some reason  "proj_age",
+                         "proj_age",
                          "proj_size"
   )]
   return(independents)
 }
+
 
 #### plots ####
 #'
@@ -973,6 +981,322 @@ estimate.noncore.glmnb.blau <- function(oss){
 }
 
 
+#### CI models ####
+estimate.ci_releases.glmnb.blau <- function(oss){
+  
+  if(param.m.add_const_to_releases){
+    oss$releases <- oss$releases + 1
+    oss$releases_control <- oss$releases_control + 1
+  }
+  
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' dependent variable: 
+  #' - releases + 1 ***
+  #' 
+  #' predictors: 
+  #' - all faultine ratios (variety diversity indicators were blau transformed!)
+  #' 
+  #' controls: 
+  #' - none
+  #' - ci (yes/no)
+  #'
+  m.ci.glmnb.blau.2 <- function(oss){
+    m <- glm.nb((releases) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  has_travis,
+                data = oss,
+                control = param.glm.control)
+    
+    # process_model(m, "releases_glmnb_3", oss)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' dependent variable: 
+  #' - releases
+  #' 
+  #' predictors: 
+  #' - all faultine ratios (variety diversity indicators were blau transformed!)
+  #' 
+  #' controls: 
+  #' - releases_control ***
+  #' - ci (yes/no)
+  #'
+  m.ci.glmnb.blau.3 <- function(oss){
+    m <- glm.nb((releases) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  releases_control +
+                  has_travis
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    # process_model(m, "releases_glmnb_3", oss)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' 
+  #' dependent variable: 
+  #' - releases + 1
+  #' 
+  #' predictors: 
+  #' - all faultine ratios (variety diversity indicators were blau transformed!)
+  #' 
+  #' controls: 
+  #' - project age ***
+  #' - ci (yes/no)
+  #'
+  m.ci.glmnb.blau.4 <- function(oss){
+    m <- glm.nb((releases) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  proj_age +
+                  has_travis
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' 
+  #' dependent variable: 
+  #' - releases + 1
+  #' 
+  #' predictors: 
+  #' - all faultine ratios (variety diversity indicators were blau transformed!)
+  #' 
+  #' controls: 
+  #' - project size ***
+  #' - ci (yes/no)
+  #'
+  m.ci.glmnb.blau.5 <- function(oss){
+    m <- glm.nb((releases) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  proj_size +
+                  has_travis
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    # process_model(m, "releases_glmnb_3", oss)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' 
+  #' dependent variable: 
+  #' - releases + 1 ***
+  #' 
+  #' predictors: 
+  #' - all faultine ratios (variety diversity indicators were blau transformed!)
+  #' 
+  #' controls: ***
+  #' - project age
+  #' - releases control + 1
+  #' - project size 
+  #' - ci (yes/no)
+  #'
+  m.ci.glmnb.blau.6 <- function(oss){
+    m <- glm.nb((releases) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  (releases_control) +
+                  proj_size +
+                  has_travis
+                #                  + proj_age
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  out <- m.ci.glmnb.blau.2(oss)    # only predictors
+  out <- append(out, list(m.ci.glmnb.blau.3(oss)[[1]]))    # 
+  #  out <- append(out, list(m.ci.glmnb.blau.4(oss)[[1]]))    # 
+  out <- append(out, list(m.ci.glmnb.blau.5(oss)[[1]]))    # 
+  out <- append(out, m.ci.glmnb.blau.6(oss))    # all shares and controls
+  
+  m.to.table(out, 
+             title = "Release models - controlling for CI", 
+             m_name = "glmnb_ci_releases_blau"
+  ) 
+}
+estimate.ci_noncore.glmnb.blau <- function(oss){
+  
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' dependent variable: 
+  #' - number of non-core contributors ***
+  #'  
+  #' predictors: 
+  #' - all faultine ratios (variety diversity indicators were blau transformed!)
+  #' 
+  #' controls: 
+  #' - project size ***
+  #' - ci (yes/no)
+  m.ci_noncore.glmnb.blau.1 <- function(oss){
+    m <- glm.nb((no_non_core) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  proj_size +
+                  has_travis
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' 
+  #' dependent variable: 
+  #' - number of non-core contributors 
+  #' 
+  #' predictors: 
+  #' - all faultine ratios (variety diversity indicators were blau transformed!)
+  #' 
+  #' controls: 
+  #' - project age ***
+  #'
+  m.ci_noncore.glmnb.blau.2 <- function(oss){
+    m <- glm.nb((no_non_core) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  has_travis
+                #                 + proj_age
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  
+  #' Model specification:
+  #' Negative Binomial GLM
+  #' 
+  #' dependent variable: 
+  #' - number of non-core contributors 
+  #' 
+  #' predictors: 
+  #' - all faultine ratios (variety diversity indicators were blau transformed!)
+  #' 
+  #' controls: ***
+  #' - project age
+  #' - project size 
+  #'
+  m.ci_noncore.glmnb.blau.3 <- function(oss){
+    m <- glm.nb((no_non_core) ~
+                  rel_persistent_blau + 
+                  rel_extensive_blau + 
+                  issue_focus_blau +
+                  code_comment_focus_blau +
+                  issue_comment_focus_blau +
+                  techcontrib_focus_blau +
+                  rel_high_reputation +
+                  rel_experienced_blau +
+                  proj_size +
+                  has_travis
+                
+                #                 + proj_age
+                ,
+                data = oss,
+                control = param.glm.control)
+    
+    p_disp <- pearson.dispersion(m)
+    
+    step <- stepAIC(m, direction="both")
+    return(list(m, step))
+  }
+  
+  #  out <- m.ci_noncore.glmnb.blau.1(oss)    # only predictors
+  #  out <- append(out, list(m.ci_noncore.glmnb.blau.2(oss)[[1]]))    # 
+  #  out <- append(out, m.ci_noncore.glmnb.blau.3(oss))        # incl. controls
+  out <-  m.ci_noncore.glmnb.blau.3(oss)
+  
+  
+  m_name = "glmnb_ci_noncore_blau"
+  
+  m.to.table(out, 
+             title = "Community engagement models - controlling for CI", 
+             m_name = m_name
+  ) 
+  
+}
+
+
 #### main ####
 
 main <- function(){
@@ -1035,6 +1359,11 @@ main <- function(){
     
     if(T){
       estimate.noncore.glmnb.blau(oss)
+    }
+    
+    if(T){
+      estimate.ci_releases.glmnb.blau(oss)
+      estimate.ci_noncore.glmnb.blau(oss)
     }
     
   }

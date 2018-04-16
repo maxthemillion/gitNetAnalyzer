@@ -1,6 +1,7 @@
 # Script calculates variable operationalizations per project and saves them 
 # to csv files separately
 
+#### libraries ####
 .libPaths(c(.libPaths(), '/home/rahnm/R/lib'))
 library(RNeo4j)
 library(dplyr)
@@ -10,6 +11,8 @@ library(futile.logger)
 library(lubridate)
 library(data.table)
 
+
+#### parameter ####
 neo = startGraph("http://localhost:7474/db/data/",
                  username = "max",
                  password = "1111")
@@ -51,9 +54,9 @@ param.analysis.filter.rule = "both"
 
 # number of contributions. defines how many contributions must be made in total 
 # such that a developer belongs to the dev_core
-param.analysis.dev_core.min = 20/180
+param.analysis.dev_core.min = 10/180
 
-#### parameters end ####
+#### queries ####
 
 #' retrieves the comment subgraph per project
 #'   @param p:      specific project
@@ -305,6 +308,207 @@ get_collaborator_status <- function(p, dt_start, dt_end){
   return(df)
 }
 
+#' get date of first contribution to the project
+#'
+#'
+get_proj_start <- function(p){
+  query_start_proj = sprintf(
+    "
+    MATCH (o:OWNER{login: '%s'})
+    WITH o
+    MATCH (node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
+    WITH o, node.event_time as c_time ORDER BY c_time ASC LIMIT 1
+    
+    MATCH (node)-[:to]->()-[:belongs_to]->(o)
+    WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
+    WITH c_time, node.event_time as t_time ORDER BY t_time ASC LIMIT 1
+    WITH COLLECT(c_time)+COLLECT(t_time) as times
+    UNWIND times as r
+    RETURN apoc.date.format(min(r), 'ms', 'yyyy-MM-dd');
+    ", 
+    p
+  )
+  
+  proj_start = ymd(cypher(neo, query_start_proj))
+  
+  return(proj_start)
+}
+
+
+#' get date of last contribution to project
+#'
+#'
+get_proj_end <- function(p){
+  query_end_proj = sprintf(
+    "
+    MATCH (o:OWNER{login: '%s'})
+    WITH o
+    MATCH (node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
+    WITH o, node.event_time as c_time ORDER BY c_time DESC LIMIT 1
+    
+    MATCH (node)-[:to]->()-[:belongs_to]->(o)
+    WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
+    WITH c_time, node.event_time as t_time ORDER BY t_time DESC LIMIT 1
+    WITH COLLECT(c_time)+COLLECT(t_time) as times
+    UNWIND times as r
+    RETURN apoc.date.format(min(r), 'ms', 'yyyy-MM-dd');
+    ",
+    p
+  )
+  
+  proj_start = ymd(cypher(neo, query_end_proj))
+  
+  return(proj_start)
+}
+
+
+#' return the analysis period
+#'
+get_analysis_period <- function(p){
+  
+  p_start = ymd(get_proj_start(p))
+  p_end = ymd(get_proj_end(p))
+  
+  analysis_mid = p_start + days(ceiling(interval(p_start, p_end)/days(1)/2))
+  analysis_start = analysis_mid - days(param.analysis.ops.period_length/2)
+  analysis_end = analysis_mid + days(param.analysis.ops.period_length/2)
+  
+  return(interval(analysis_start, analysis_end))
+}
+
+#' get the persistency operationalization of active periods per developer
+#'
+#'
+get_persistency <- function(p, dt_start, dt_end, proj_start, dev_core){
+  
+  # how many periods have passed since then?
+  proj_time <- interval(proj_start, ymd(dt_end))
+  periods_passed <- ceiling(proj_time/days(param.analysis.period.length))
+  
+  # get date of each users' first comment to the project
+  query_1=sprintf(
+    "
+    MATCH (o:OWNER{login: '%s'})
+    MATCH (u:USER)-[:makes]->(node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
+    WITH u.gha_id as gha_id, node.event_time as e_time ORDER BY u, e_time ASC
+    RETURN gha_id, apoc.date.format(head(COLLECT(e_time)), 'ms', 'yyyy-MM-dd') as comment_min_time
+    ", 
+    p)
+  
+  date.comment.min  = cypher(neo, query_1)
+  date.comment.min$comment_min_time = ymd(date.comment.min$comment_min_time)
+  
+  # get date of each users' first technical contribution
+  query_2 = sprintf(
+    "    
+    MATCH (o:OWNER{login: '%s'})
+    MATCH (u:USER) --> (node) -[:to]-> () -[:belongs_to]-> (o)
+    WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
+    WITH u.gha_id as gha_id, node.event_time as e_time ORDER BY u, e_time ASC
+    RETURN gha_id, apoc.date.format(head(COLLECT(e_time)), 'ms', 'yyyy-MM-dd') as techcontrib_min_time
+    ",
+    p)
+  
+  date.techcontrib.min = cypher(neo, query_2)
+  date.techcontrib.min$techcontrib_min_time = ymd(date.techcontrib.min$techcontrib_min_time)
+  
+  # select the earliest of both dates
+  temp = merge(x = date.comment.min, y = date.techcontrib.min, by = 'gha_id', all = TRUE)
+  date.all= data.frame(
+    min_date = apply(temp[, -1], 1, FUN = min, na.rm = T),
+    gha_id = temp$gha_id
+  )
+  
+  # get start dates of periods to iterate over
+  dt_e = ymd(dt_end)
+  
+  # get activity data since first contribution to the project
+  activity = list()
+  dt_ce = dt_e
+  dt_cs = dt_ce - days(param.analysis.period.length) + days(1)
+  while (dt_ce > proj_start) {
+    # calculate the number of active periods since the users' first contribution 
+    # do something
+    query = sprintf(
+      " 
+      MATCH (o:OWNER{login: '%s'})
+      WITH o,
+      apoc.date.parse('%s', 'ms', 'yyyy-MM-dd') as end,
+      apoc.date.parse('%s', 'ms', 'yyyy-MM-dd') as start
+      
+      // comments
+      MATCH (u:USER)-[:makes]->(node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
+      WHERE
+      node.event_time >= start AND
+      node.event_time <= end
+      WITH o, start, end, COLLECT({u_id: u.gha_id, n_id: id(node)}) as comments
+      
+      // technicals
+      MATCH (u:USER)-->(node) -[:to]-> () -[:belongs_to]-> (o)
+      WHERE
+      (node:PULLREQUEST OR node:ISSUE OR node:COMMIT) AND
+      node.event_time >= start AND
+      node.event_time <= end
+      WITH comments + COLLECT({u_id: u.gha_id, n_id: id(node)}) as allContributions
+      UNWIND allContributions as row
+      
+      WITH row.u_id as u_id, COUNT(DISTINCT row.n_id) as count_contributions
+      WHERE count_contributions >= %s
+      RETURN u_id as gha_id, 1 as active;",
+      p,
+      dt_ce,
+      dt_cs,
+      param.analysis.active.min)
+    
+    str = paste(year(dt_ce),month(dt_ce), day(dt_ce), sep = "-")
+    activity[[str]] = cypher(neo, query)
+    
+    # set dt_ce and dt_cs
+    dt_ce = dt_ce - days(param.analysis.period.length)
+    dt_cs = dt_ce - days(param.analysis.period.length) + days(1)
+  }
+  
+  # merge all dataframes
+  df = activity %>%
+    Reduce(function(dtf1,dtf2) full_join(dtf1,dtf2,by="gha_id"), .)
+  # set all NAs to 0, since NA means no activity
+  df[is.na(df)] <- 0
+  
+  # sum over columns
+  active = data.frame(
+    gha_id = df$gha_id, 
+    sum.active = apply(df[-1], 1, sum))
+  
+  # remove all users which do not belong to the dev-core
+  active <- active[active$gha_id %in% dev_core$gha_id ,]
+  
+  # calculate the number of active periods since the users' first contribution
+  temp = merge(x = active, y = date.all, by = 'gha_id', all.x = T)
+  
+  temp$periods_since_first = ceiling(interval(temp$min_date, ymd(dt_end))/days(param.analysis.period.length))
+  
+  active$persistency = temp$sum.active / temp$periods_since_first
+  
+  # calculate the share of active periods in periods since the project start (experience)
+  active$proj_experience = active$sum.active/periods_passed 
+  
+  return(active)
+}
+
+#' 
+#'
+#'
+get_communities <- function(graph_u){
+  communities = cluster_louvain(graph_u)  
+  com <- cbind(V(graph_u)$name, communities$membership)
+  com <- setNames(as.data.frame(com), c("gha_id", "group"))
+  com$no_subgroups <- length(unique(com$group))
+  com$modularity <- modularity(communities)
+  return(com)
+}
+
+#### ops calculation ####
+
 #' calculates variable operationalizations
 #' 1. Collects comment and technicals count
 #' 2. merges counts together based on the developers' ids
@@ -435,192 +639,8 @@ ops.calculate.network_measures <- function(graph_d){
                     proximity_prestige = proximity_prestige_sd))
 }
 
-#' get date of first contribution to the project
-#'
-#'
-get_proj_start <- function(p){
-  query_start_proj = sprintf(
-    "
-    MATCH (o:OWNER{login: '%s'})
-    WITH o
-    MATCH (node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
-    WITH o, node.event_time as c_time ORDER BY c_time ASC LIMIT 1
-    
-    MATCH (node)-[:to]->()-[:belongs_to]->(o)
-    WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
-    WITH c_time, node.event_time as t_time ORDER BY t_time ASC LIMIT 1
-    WITH COLLECT(c_time)+COLLECT(t_time) as times
-    UNWIND times as r
-    RETURN apoc.date.format(min(r), 'ms', 'yyyy-MM-dd');
-    ", 
-    p
-  )
-  
-  proj_start = ymd(cypher(neo, query_start_proj))
-  
-  return(proj_start)
-}
 
-
-#' get date of last contribution to project
-#'
-#'
-get_proj_end <- function(p){
-  query_end_proj = sprintf(
-    "
-    MATCH (o:OWNER{login: '%s'})
-    WITH o
-    MATCH (node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
-    WITH o, node.event_time as c_time ORDER BY c_time DESC LIMIT 1
-    
-    MATCH (node)-[:to]->()-[:belongs_to]->(o)
-    WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
-    WITH c_time, node.event_time as t_time ORDER BY t_time DESC LIMIT 1
-    WITH COLLECT(c_time)+COLLECT(t_time) as times
-    UNWIND times as r
-    RETURN apoc.date.format(min(r), 'ms', 'yyyy-MM-dd');
-    ",
-    p
-  )
-  
-  proj_start = ymd(cypher(neo, query_end_proj))
-  
-  return(proj_start)
-}
-
-
-#' return the analysis period
-#'
-get_analysis_period <- function(p){
-  
-  p_start = ymd(get_proj_start(p))
-  p_end = ymd(get_proj_end(p))
-  
-  analysis_mid = p_start + days(ceiling(interval(p_start, p_end)/days(1)/2))
-  analysis_start = analysis_mid - days(param.analysis.ops.period_length/2)
-  analysis_end = analysis_mid + days(param.analysis.ops.period_length/2)
-  
-  return(interval(analysis_start, analysis_end))
-}
-
-#' get the persistency operationalization of active periods per developer
-#'
-#'
-get_persistency <- function(p, dt_start, dt_end, proj_start, dev_core){
-  
-  # how many periods have passed since then?
-  proj_time <- interval(proj_start, ymd(dt_end))
-  periods_passed <- ceiling(proj_time/days(param.analysis.period.length))
-  
-  # get date of each users' first comment to the project
-  query_1=sprintf(
-    "
-    MATCH (o:OWNER{login: '%s'})
-    MATCH (u:USER)-[:makes]->(node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
-    WITH u.gha_id as gha_id, node.event_time as e_time ORDER BY u, e_time ASC
-    RETURN gha_id, apoc.date.format(head(COLLECT(e_time)), 'ms', 'yyyy-MM-dd') as comment_min_time
-    ", 
-    p)
-  
-  date.comment.min  = cypher(neo, query_1)
-  date.comment.min$comment_min_time = ymd(date.comment.min$comment_min_time)
-  
-  # get date of each users' first technical contribution
-  query_2 = sprintf(
-    "    
-    MATCH (o:OWNER{login: '%s'})
-    MATCH (u:USER) --> (node) -[:to]-> () -[:belongs_to]-> (o)
-    WHERE (node:PULLREQUEST OR node:ISSUE OR node:COMMIT)
-    WITH u.gha_id as gha_id, node.event_time as e_time ORDER BY u, e_time ASC
-    RETURN gha_id, apoc.date.format(head(COLLECT(e_time)), 'ms', 'yyyy-MM-dd') as techcontrib_min_time
-    ",
-    p)
-  
-  date.techcontrib.min = cypher(neo, query_2)
-  date.techcontrib.min$techcontrib_min_time = ymd(date.techcontrib.min$techcontrib_min_time)
-  
-  # select the earliest of both dates
-  temp = merge(x = date.comment.min, y = date.techcontrib.min, by = 'gha_id', all = TRUE)
-  date.all= data.frame(
-    min_date = apply(temp[, -1], 1, FUN = min, na.rm = T),
-    gha_id = temp$gha_id
-    )
-  
-  # get start dates of periods to iterate over
-  dt_e = ymd(dt_end)
-  
-  # get activity data since first contribution to the project
-  activity = list()
-  dt_ce = dt_e
-  dt_cs = dt_ce - days(param.analysis.period.length) + days(1)
-  while (dt_ce > proj_start) {
-    # calculate the number of active periods since the users' first contribution 
-  # do something
-    query = sprintf(
-      " 
-      MATCH (o:OWNER{login: '%s'})
-      WITH o,
-      apoc.date.parse('%s', 'ms', 'yyyy-MM-dd') as end,
-      apoc.date.parse('%s', 'ms', 'yyyy-MM-dd') as start
-      
-      // comments
-      MATCH (u:USER)-[:makes]->(node:COMMENT)-[:to]->()-[:to]->()-[:belongs_to]->(o)
-      WHERE
-      node.event_time >= start AND
-      node.event_time <= end
-      WITH o, start, end, COLLECT({u_id: u.gha_id, n_id: id(node)}) as comments
-      
-      // technicals
-      MATCH (u:USER)-->(node) -[:to]-> () -[:belongs_to]-> (o)
-      WHERE
-      (node:PULLREQUEST OR node:ISSUE OR node:COMMIT) AND
-      node.event_time >= start AND
-      node.event_time <= end
-      WITH comments + COLLECT({u_id: u.gha_id, n_id: id(node)}) as allContributions
-      UNWIND allContributions as row
-      
-      WITH row.u_id as u_id, COUNT(DISTINCT row.n_id) as count_contributions
-      WHERE count_contributions >= %s
-      RETURN u_id as gha_id, 1 as active;",
-      p,
-      dt_ce,
-      dt_cs,
-      param.analysis.active.min)
-    
-    str = paste(year(dt_ce),month(dt_ce), day(dt_ce), sep = "-")
-    activity[[str]] = cypher(neo, query)
-  
-  # set dt_ce and dt_cs
-  dt_ce = dt_ce - days(param.analysis.period.length)
-  dt_cs = dt_ce - days(param.analysis.period.length) + days(1)
-  }
-  
-  # merge all dataframes
-  df = activity %>%
-    Reduce(function(dtf1,dtf2) full_join(dtf1,dtf2,by="gha_id"), .)
-  # set all NAs to 0, since NA means no activity
-  df[is.na(df)] <- 0
-  
-  # sum over columns
-  active = data.frame(
-    gha_id = df$gha_id, 
-    sum.active = apply(df[-1], 1, sum))
-  
-  # remove all users which do not belong to the dev-core
-  active <- active[active$gha_id %in% dev_core$gha_id ,]
-  
-  # calculate the number of active periods since the users' first contribution
-  temp = merge(x = active, y = date.all, by = 'gha_id', all.x = T)
-  
-  temp$periods_since_first = ceiling(interval(temp$min_date, ymd(dt_end))/days(param.analysis.period.length))
-  
-  active$persistency = temp$sum.active / temp$periods_since_first
-
-  # calculate the share of active periods in periods since the project start (experience)
-  active$proj_experience = active$sum.active/periods_passed 
-
-return(active)
-}
+#### main part ####
 
 #' joins operationalization df with groups
 #' those users who did not contribute or have not been referenced by any comments will not be clustered into groups,
@@ -640,9 +660,11 @@ ops.assemble <- function(project, communities, ratios, collabs, persistency, net
   return (df)
 }
 
-#'
-#'
-#'
+#' centers measures listed around the mean and standardizes them to sd = 1
+#' z = (x - mean(x))/sd(x)
+#' @param df data frame containing variables to standardize
+#' @return data frame containing the provided variables and their standardizations
+#' 
 standardize_measures<- function(df){
   
   variables <- c("ratio_code_issue",
@@ -654,25 +676,12 @@ standardize_measures<- function(df){
                  "proximity_prestige",
                  "proj_experience")
   
-  
   for(i in 1:length(variables)){
       new_name = paste(variables[i], "sd", sep = "_")
       df[, new_name] = (df[, variables[i]] - mean(df[, variables[i]], na.rm = T))/sd(df[, variables[i]], na.rm = T)
   }
   
   return(df)
-}
-
-#'
-#'
-#'
-get_communities <- function(graph_u){
-  communities = cluster_louvain(graph_u)  
-  com <- cbind(V(graph_u)$name, communities$membership)
-  com <- setNames(as.data.frame(com), c("gha_id", "group"))
-  com$no_subgroups <- length(unique(com$group))
-  com$modularity <- modularity(communities)
-  return(com)
 }
 
 #' toggles the operationalizations construction process
@@ -684,6 +693,7 @@ get_communities <- function(graph_u){
 #'   @param dt_start:   start date
 #'   @param dt_end:     end date
 #'   @return operationalizations data frame
+#'   
 ops.get <- function(p, dt_start, dt_end) {
   
   # get comment subgraph
@@ -743,7 +753,6 @@ ops.get <- function(p, dt_start, dt_end) {
   return(ops)
 }
 
-#' saves an operationalizations csv file per project
 main <- function () {
   projects <- get_project_names()
   
