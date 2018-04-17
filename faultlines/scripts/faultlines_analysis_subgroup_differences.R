@@ -19,8 +19,8 @@ param.plot.units = "cm"
 
 param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
 param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all.csv", sep = "")
-param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/variance/tables/", sep = "")
-param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/variance/plots/", sep = "")
+param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/variation/tables/", sep = "")
+param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/variation/plots/", sep = "")
 
 #### import ####
 #' import operationalization csv file
@@ -46,7 +46,7 @@ ops.groups.select <- function(ops, s){
     return(as.numeric(x[2]) %in% y$group)
   }
   
-  group.count = ddply(ops, c("project", "group"), summarize, count=length(unique(gha_id)))
+  group.count = plyr::ddply(ops, c("project", "group"), summarize, count=length(unique(gha_id)))
 
   L = group.count$count >= s
   group.selection = group.count[L ,]
@@ -105,6 +105,14 @@ subgroup.test <- function(sg){
   return(out)
 }
 
+#'
+#'
+#'
+fishers.method <- function(x){
+  res = sumlog(x)
+  return(data.frame(chisq = res$chisq, p = format.pval(res$p, digits = 3), df = res$df))
+}
+
 main <- function(){
   
   ops <- ops.import()
@@ -113,9 +121,18 @@ main <- function(){
   
   test.res <- ddply(ops.sel, "project", function(x) subgroup.test(x)) 
   
-  sum.res <- apply(test.res[!is.na(test.res$p_persistency_sd),-1], 2, sumlog)
+  #' summarizing the p-values using Fisher's combined probability test
+  #' - H0: all the underlying H0-hypotheses are true
+  #' - H1: at least one of the underlying H1-hypotheses are true
+  #'
+  sum.res <- adply(test.res[!is.na(test.res$p_persistency_sd),-1], 2, function(x) fishers.method(x))
   
-  print(sum.res)
+  stargazer(sum.res, 
+            type = "text", 
+            title = "Aggregated results of Kruskal-Wallis test for subgroup differences", 
+            out = paste(param.table.out, "fisher_res.txt", sep = ""), 
+            summary = F,
+            initial.zero = F)
 }
 
 main()
