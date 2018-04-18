@@ -8,9 +8,9 @@ library(metap)
 
 #### parameters ####
 param.analysis.all = F                          # specifies, whether all or only a single project should be imported and analysed
-param.analysis.groups.minsize = 1               # min group size which qualifies for further analysis
+param.analysis.groups.minsize = 2             # min group size which qualifies for further analysis
 
-param.dataset = "sp180_c10" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
+param.dataset = "sp180_c10" # can be "sp180_c10", "sp180_c20", "sp180_c50" or "sp90_c20" 
 
 param.plot.res = 300
 param.plot.width = 12
@@ -110,7 +110,24 @@ subgroup.test <- function(sg){
 #'
 fishers.method <- function(x){
   res = sumlog(x)
-  return(data.frame(chisq = res$chisq, p = format.pval(res$p, digits = 3), df = res$df))
+  return(data.frame(variable = names(x), 
+                    chisq = res$chisq, 
+                    p = format.pval(res$p, digits = 3)
+                    ))
+}
+
+#'
+#'
+#'
+kruskal.shares <- function(x){
+  s = sum(x <= 0.05, na.rm = T)
+  is = sum(!(x<= 0.05), na.rm = T)
+  
+  return(data.frame(
+    variable = names(x),
+    no_significant = s,
+    share = round(s/(s+is), digits = 3)
+  ))
 }
 
 main <- function(){
@@ -125,12 +142,24 @@ main <- function(){
   #' - H0: all the underlying H0-hypotheses are true
   #' - H1: at least one of the underlying H1-hypotheses are true
   #'
-  sum.res <- adply(test.res[!is.na(test.res$p_persistency_sd),-1], 2, function(x) fishers.method(x))
+  sum.res <- adply(test.res[!is.na(test.res$p_persistency_sd),-1], 
+                   2, 
+                   function(x) fishers.method(x),
+                   .id = NULL)
   
-  stargazer(sum.res, 
-            type = "text", 
-            title = "Aggregated results of Kruskal-Wallis test for subgroup differences", 
-            out = paste(param.table.out, "fisher_res.txt", sep = ""), 
+  test.shares <- adply(test.res[,-1],
+                       2, 
+                       function(x) kruskal.shares(x), 
+                       .id = NULL)
+  
+  stargazer(merge(sum.res, test.shares, by = "variable"), 
+            type = "text",
+            title = "Aggregated results of Kruskal-Wallis test for subgroup differences",
+            add.lines = c(paste("Number of significant tests per variable (p = .05, g_min = ", 
+                          param.analysis.groups.minsize,
+                          ")"), 
+                          sep = ""),
+            out = paste(param.table.out, "subgroup_differences_res.txt", sep = ""), 
             summary = F,
             initial.zero = F)
 }
