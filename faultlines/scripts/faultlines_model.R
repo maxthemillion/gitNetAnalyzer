@@ -16,8 +16,7 @@ param.plot.hist = F
 param.models.estimate = F
 param.glm.control = glm.control(epsilon = 1e-8, maxit = 100, trace = FALSE)
 
-param.m.add_const_to_releases = F # adding a constant would violate distribution assumption, leave F
-param.m.transform.blau = F
+param.m.transform.blau = T  # no significant effects when untransformed
 param.m.transform.controls = F
 
 param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
@@ -50,10 +49,10 @@ import.variables <- function(){
   ci <- read.csv(paste(param.path.root, "data/models/travis.csv", sep =""))[, c("project", "has_travis")]
   
   # merge
-  res = merge(x = independents, y = dependents, by = "project")
-  res = merge(x = res, y=ci, by = "project")
+  oss = merge(x = independents, y = dependents, by = "project")
+  oss = merge(x = oss, y=ci, by = "project")
   
-  res$has_travis = as.factor(res$has_travis)
+  oss$has_travis = as.factor(oss$has_travis)
   
   if(param.m.transform.blau){
     oss = transform.blau(oss)
@@ -66,7 +65,7 @@ import.variables <- function(){
   # calculate categorial variable for zero inflated NBR and PR
   oss$releases_control_cat = as.factor(oss$releases_control > 0)
   
-  return(res)
+  return(oss)
 }
 
 #' separates dependent variables for visualization purposes
@@ -473,6 +472,35 @@ transform.controls<- function(oss){
   return(oss)
 }
 
+#'
+#'
+#'
+formula.add.variable <- function(form, var){
+  vars = all.vars(form)
+  resp = vars[1]
+  rhs = vars[2:length(vars)]
+  
+  len_init = length(rhs)
+  
+  for (i in 1:length(var)){
+    rhs[len_init + i] <- var[i]
+  }
+  
+  return(reformulate(rhs, response=resp))
+}
+
+#'
+#'
+#'
+formula.drop.variable <- function(form, var){
+  vars = all.vars(form)
+  resp = vars[1]
+  rhs = vars[2:length(vars)]
+  
+  pos = match(var, rhs)
+  
+  return(reformulate(rhs[-pos], resp))
+}
 
 #### output ####
 #' saves the supplied ggplot under the specified name
@@ -550,122 +578,69 @@ report.dispersion <- function(d){
 }
 
 #### release models standard ####
+
 estimate.releases.nbr.standard <- function(oss){
+  
+  m.releases.nbr.controls <- glm.nb(releases ~ releases_control +
+                                      proj_age +
+                                      proj_size, 
+                                    data = oss, 
+                                    control = param.glm.control)
+  
+  form.s = releases ~
+    rel_high_reputation +
+    rel_experienced +
+    issue_focus +
+    techcontrib_focus +
+    code_comment_focus +
+    issue_comment_focus +
+    rel_persistent + 
+    rel_extensive
   
   #' Negative Binomial GLM
   #' controls: 
   #' - none
   #'
-  m.releases.nbr.s.1<- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced,
-    data = oss,
-    control = param.glm.control)
+  form = form.s
+  m.releases.nbr.s.1<- glm.nb(form, data = oss, control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: 
   #' - releases_control ***
   #'
-  m.releases.nbr.s.2 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      releases_control
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, "releases_control")
+  m.releases.nbr.s.2 <- glm.nb(form, data = oss,  control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: 
   #' - project age ***
   #'
-  m.releases.nbr.s.3 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      proj_age
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, "proj_age")
+  m.releases.nbr.s.3 <- glm.nb(form, data = oss,  control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: 
   #' - project size ***
-  #'
-  m.releases.nbr.s.4 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      proj_size
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, "proj_size")
+  m.releases.nbr.s.4 <- glm.nb(form, data = oss, control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls:  ***
   #' - proj size
   #' - releases control
-  #'
-  m.releases.nbr.s.5 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      releases_control +
-      proj_size
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, c("releases_control", "proj_age", "proj_size"))
+  m.releases.nbr.s.5 <- glm.nb(form, data = oss,  control = param.glm.control)
   
   #' Negative Binomial GLM
+  #' removed issue_comment_focus
+  #' 
   #' controls:
   #' - proj size
   #' - releases control
   #'
-  m.releases.nbr.s.6 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      releases_control +
-      proj_size
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.drop.variable(form.s, "issue_comment_focus")
+  form = formula.add.variable(form, c("proj_size", "releases_control"))
+  m.releases.nbr.s.6 <- glm.nb(form, data = oss, control = param.glm.control)
   
   out <- list()
   out [[1]] <- m.releases.nbr.s.1
@@ -674,6 +649,7 @@ estimate.releases.nbr.standard <- function(oss){
   out [[4]] <- m.releases.nbr.s.4
   out [[5]] <- m.releases.nbr.s.5
   out [[6]] <- m.releases.nbr.s.6
+  out [[7]] <- m.releases.nbr.controls
   
   m.to.table(out, 
              title = "Release models (standard indicators, glm family: negbin)",
@@ -681,89 +657,111 @@ estimate.releases.nbr.standard <- function(oss){
 }
 
 estimate.releases.zinbr.standard <- function(oss){
-  
-  #' ZIPR
-  #' no controls
-  #'
-  m.releases.zipr.standard.1 <- zeroinfl(releases ~
-                                           rel_persistent + 
-                                           rel_extensive + 
-                                           issue_focus +
-                                           code_comment_focus +
-                                           techcontrib_focus +
-                                           rel_high_reputation +
-                                           rel_experienced | releases_control_cat
-                                         ,
-                                         data = oss)
+
+  m.releases.zinbr.controls <- zeroinfl(releases ~ releases_control + proj_age + proj_size | releases_control_cat,
+                                        data = oss,
+                                        EM = T,
+                                        dist = "negbin")
   
   #' ZINBR 1
   #' no controls
   #'
   m.releases.zinbr.standard.1 <- zeroinfl(releases ~
-                                            rel_persistent + 
-                                            rel_extensive + 
-                                            issue_focus +
-                                            code_comment_focus +
-                                            techcontrib_focus +
                                             rel_high_reputation +
-                                            rel_experienced | releases_control_cat
+                                            rel_experienced +
+                                            issue_focus +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive | releases_control_cat
                                           ,
                                           data = oss,
                                           EM = T,
-                                          dist = "negbin",
-                                          control = zeroinfl.control(method ="BFGS", maxit = 10000, trace = F))
-  
-  #' VUONG test comparing m.zipr1 and m.zinbr1
-  #'
-  vuong(m.releases.zipr.standard.1, m.releases.zinbr.standard.1)
-  
+                                          dist = "negbin")
   
   #' ZINBR 2
   #' controlling for previous releases
   #'
   m.releases.zinbr.standard.2 <- zeroinfl(releases ~
-                                            rel_persistent + 
-                                            rel_extensive + 
-                                            issue_focus +
-                                            code_comment_focus +
-                                            techcontrib_focus +
                                             rel_high_reputation +
                                             rel_experienced +
+                                            issue_focus +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
                                             releases_control | releases_control_cat
-                                          ,
-                                          data = oss,
-                                          dist = "negbin",
-                                          # EM = T,
-                                          control = zeroinfl.control(method ="BFGS", maxit = 10000, trace = F))
-  
-  
-  #' ZINBR 3
-  #' controlling for project size
-  #'
-  m.releases.zinbr.standard.3 <- zeroinfl(releases ~
-                                            rel_persistent + 
-                                            rel_extensive + 
-                                            issue_focus +
-                                            code_comment_focus +
-                                            techcontrib_focus +
-                                            rel_high_reputation +
-                                            rel_experienced +
-                                            proj_size | releases_control_cat
                                           ,
                                           data = oss,
                                           dist = "negbin")
   
   #' ZINBR 4
-  #' controlling for project size and previous releases
+  #' controlling for project age
   #'
-  m.releases.zinbr.standard.4 <- zeroinfl(releases ~
-                                            rel_persistent + 
-                                            rel_extensive + 
-                                            issue_focus +
-                                            code_comment_focus +
-                                            techcontrib_focus +
+  m.releases.zinbr.standard.3 <- zeroinfl(releases ~
                                             rel_high_reputation +
                                             rel_experienced +
+                                            issue_focus +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
+                                            proj_age | releases_control_cat
+                                          ,
+                                          data = oss,
+                                          dist = "negbin")
+  
+  
+  #' ZINBR 4
+  #' controlling for project size
+  #'
+  m.releases.zinbr.standard.4 <- zeroinfl(releases ~
+                                            rel_high_reputation +
+                                            rel_experienced +
+                                            issue_focus +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
+                                            proj_size | releases_control_cat
+                                          ,
+                                          data = oss,
+                                          dist = "negbin")
+  
+  #' ZINBR 5
+  #' controlling for project size and previous releases
+  #'
+  m.releases.zinbr.standard.5 <- zeroinfl(releases ~
+                                            rel_high_reputation +
+                                            rel_experienced +
+                                            issue_focus +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
+                                            releases_control +
+                                            proj_age +
+                                            proj_size | releases_control_cat
+                                          ,
+                                          data = oss,
+                                          dist = "negbin")
+  
+  #' ZINBR 6
+  #' controlling for all controls
+  #'
+  m.releases.zinbr.standard.6 <- zeroinfl(releases ~
+                                            rel_high_reputation +
+                                            rel_experienced +
+                                            issue_focus +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
                                             releases_control +
                                             proj_size | releases_control_cat
                                           ,
@@ -775,6 +773,9 @@ estimate.releases.zinbr.standard <- function(oss){
   out [[2]] <- m.releases.zinbr.standard.2
   out [[3]] <- m.releases.zinbr.standard.3
   out [[4]] <- m.releases.zinbr.standard.4
+  out [[5]] <- m.releases.zinbr.standard.5
+  out [[6]] <- m.releases.zinbr.standard.6
+  out [[7]] <- m.releases.zinbr.controls
   
   m.to.table(out, 
              title = "Zero inflated release models (standard indicators, glm family: zi-negbin)", 
@@ -783,67 +784,39 @@ estimate.releases.zinbr.standard <- function(oss){
 }
 
 estimate.ci_releases.nbr.standard <- function(oss){
+  form.s = releases ~
+    rel_persistent + 
+    rel_extensive + 
+    issue_focus +
+    code_comment_focus +
+    issue_comment_focus +
+    techcontrib_focus +
+    rel_high_reputation +
+    rel_experienced +
+    has_travis
+  
   
   #' Negative Binomial GLM
   #' controls: 
   #' - ci (yes/no)
   #'
-  m.releases.ci.nbr.standard.1 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      has_travis,
-    data = oss,
-    control = param.glm.control)
+  m.releases.ci.nbr.standard.1 <- glm.nb(form.s, data = oss, control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: 
   #' - releases_control ***
   #' - ci (yes/no)
   #'
-  m.releases.ci.nbr.standard.2 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      releases_control +
-      has_travis
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, "releases_control")
+  m.releases.ci.nbr.standard.2 <- glm.nb(form, data = oss, control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: 
   #' - project size ***
   #' - ci (yes/no)
   #'
-  m.releases.ci.nbr.standard.3 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      proj_size +
-      has_travis
-    ,
-    data = oss,
-    control = param.glm.control)
-  
+  form = formula.add.variable(form.s, "proj_size")
+  m.releases.ci.nbr.standard.3 <- glm.nb(form, data = oss, control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: ***
@@ -851,22 +824,8 @@ estimate.ci_releases.nbr.standard <- function(oss){
   #' - project size 
   #' - ci (yes/no)
   #'
-  m.releases.ci.nbr.standard.4 <- glm.nb(
-    releases ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      releases_control +
-      proj_size +
-      has_travis
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, c("releases_control", "proj_size"))
+  m.releases.ci.nbr.standard.4 <- glm.nb(form, data = oss, control = param.glm.control)
   
   out <- list()
   out [[1]] <- m.releases.ci.nbr.standard.1
@@ -883,122 +842,66 @@ estimate.ci_releases.nbr.standard <- function(oss){
 #### release models blau ####
 estimate.releases.nbr.blau <- function(oss){
   
+  m.releases.nbr.controls <- glm.nb(releases ~ releases_control +
+                                      proj_age +
+                                      proj_size, 
+                                    data = oss, 
+                                    control = param.glm.control)
+  
+  form.s = releases ~
+    rel_high_reputation +
+    rel_experienced_blau +
+    issue_focus_blau +
+    techcontrib_focus_blau +
+    code_comment_focus_blau +
+    issue_comment_focus_blau +
+    rel_persistent_blau + 
+    rel_extensive_blau 
+  
   #' Negative Binomial GLM
   #' controls: 
   #' - none
   #'
-  m.releases.nbr.blau.1 <- glm.nb(
-    releases ~
-      rel_persistent_blau + 
-      rel_extensive_blau + 
-      issue_focus_blau +
-      code_comment_focus_blau +
-      issue_comment_focus_blau +
-      techcontrib_focus_blau +
-      rel_high_reputation +
-      rel_experienced_blau,
-    data = oss,
-    control = param.glm.control)
-  
+  m.releases.nbr.blau.1 <- glm.nb(form.s, data = oss, control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: 
   #' - releases_control ***
   #'
-  m.releases.nbr.blau.2 <- glm.nb(
-    releases ~
-      rel_persistent_blau + 
-      rel_extensive_blau + 
-      issue_focus_blau +
-      code_comment_focus_blau +
-      issue_comment_focus_blau +
-      techcontrib_focus_blau +
-      rel_high_reputation +
-      rel_experienced_blau +
-      releases_control
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, "releases_control")
+  m.releases.nbr.blau.2 <- glm.nb(form, data = oss, control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: 
   #' - project age ***
   #'
-  m.releases.nbr.blau.3 <- glm.nb(
-    releases ~
-      rel_persistent_blau + 
-      rel_extensive_blau + 
-      issue_focus_blau +
-      code_comment_focus_blau +
-      issue_comment_focus_blau +
-      techcontrib_focus_blau +
-      rel_high_reputation +
-      rel_experienced_blau +
-      proj_age
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, "proj_age")
+  m.releases.nbr.blau.3 <- glm.nb(form, data = oss, control = param.glm.control)
   
     #' Negative Binomial GLM
   #' controls: 
   #' - project size ***
   #'
-  m.releases.nbr.blau.4 <- glm.nb(
-    releases ~
-      rel_persistent_blau + 
-      rel_extensive_blau + 
-      issue_focus_blau +
-      code_comment_focus_blau +
-      issue_comment_focus_blau +
-      techcontrib_focus_blau +
-      rel_high_reputation +
-      rel_experienced_blau +
-      proj_size
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, "proj_size")
+  m.releases.nbr.blau.4 <- glm.nb(form, data = oss, control = param.glm.control)
   
   
   #' Negative Binomial GLM
   #' controls: ***
   #' - releases control
   #' - project size 
-  #'
-  m.releases.nbr.blau.5 <- glm.nb(
-    releases ~
-      rel_persistent_blau + 
-      rel_extensive_blau + 
-      issue_focus_blau +
-      code_comment_focus_blau +
-      issue_comment_focus_blau +
-      techcontrib_focus_blau +
-      rel_high_reputation +
-      rel_experienced_blau +
-      releases_control +
-      proj_size
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.add.variable(form.s, c("releases_control", "proj_age", "proj_size"))
+  m.releases.nbr.blau.5 <- glm.nb(form, data = oss, control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls:
   #' - releases control
   #' - project size 
   #'
-  m.releases.nbr.blau.6 <- glm.nb(
-    releases ~
-      rel_persistent_blau + 
-      rel_extensive_blau + 
-      issue_focus_blau +
-      techcontrib_focus_blau +
-      code_comment_focus_blau +
-      rel_high_reputation +
-      rel_experienced_blau +
-      releases_control +
-      proj_size
-    ,
-    data = oss,
-    control = param.glm.control)
+  #'
+  form = formula.drop.variable(form.s, "issue_comment_focus_blau")
+  form = formula.add.variable(form, c("releases_control", "proj_size"))
+  m.releases.nbr.blau.6 <- glm.nb(form, data = oss, control = param.glm.control)
   
   #'
   #' added interaction terms
@@ -1018,13 +921,14 @@ estimate.releases.nbr.blau <- function(oss){
     data = oss,
     control = param.glm.control)
   
-  
   out <- list()
   out [[1]] <- m.releases.nbr.blau.1
   out [[2]] <- m.releases.nbr.blau.2
-  out [[3]] <- m.releases.nbr.blau.4
-  out [[4]] <- m.releases.nbr.blau.5
-  out [[5]] <- m.releases.nbr.blau.6
+  out [[3]] <- m.releases.nbr.blau.3
+  out [[4]] <- m.releases.nbr.blau.4
+  out [[5]] <- m.releases.nbr.blau.5
+  out [[6]] <- m.releases.nbr.blau.6
+  out [[7]] <- m.releases.nbr.controls
   
   m.to.table(out, 
              title = "Release models - (Blau indicators, glm family: negbin)", 
@@ -1264,94 +1168,162 @@ estimate.ci_releases.nbr.blau <- function(oss){
   
 
 #### non-core models standard ####
+
 estimate.noncore.nbr.standard <- function(oss){
   
-  #' Negative Binomial GLM
-  #' - no controls
-  #'
-  m.noncore.nbr.standard.1 <- glm.nb(
-    no_non_core ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced
-    ,
-    data = oss,
-    control = param.glm.control)
+  m.noncore.nbr.controls <- glm.nb(no_non_core ~ releases_control +
+                                      proj_age +
+                                      proj_size, 
+                                    data = oss, 
+                                    control = param.glm.control)
+  
+  form.s = no_non_core ~
+    rel_high_reputation +
+    rel_experienced +
+    issue_focus +
+    techcontrib_focus +
+    code_comment_focus +
+    issue_comment_focus +
+    rel_persistent + 
+    rel_extensive
   
   #' Negative Binomial GLM
   #' controls: 
-  #' - previous releases ***
+  #' - none
   #'
-  m.noncore.nbr.standard.2 <- glm.nb(
-    no_non_core ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      issue_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      release_control
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = form.s
+  m.noncore.nbr.s.1<- glm.nb(form, data = oss, control = param.glm.control)
   
+  #' Negative Binomial GLM
+  #' controls: 
+  #' - releases_control ***
+  #'
+  form = formula.add.variable(form.s, "releases_control")
+  m.noncore.nbr.s.2 <- glm.nb(form, data = oss,  control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' controls: 
+  #' - project age ***
+  #'
+  form = formula.add.variable(form.s, "proj_age")
+  m.noncore.nbr.s.3 <- glm.nb(form, data = oss,  control = param.glm.control)
   
   #' Negative Binomial GLM
   #' controls: 
   #' - project size ***
+  form = formula.add.variable(form.s, "proj_size")
+  m.noncore.nbr.s.4 <- glm.nb(form, data = oss, control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' controls:  ***
+  #' - proj size
+  #' - releases control
+  form = formula.add.variable(form.s, c("releases_control", "proj_age", "proj_size"))
+  m.noncore.nbr.s.5 <- glm.nb(form, data = oss,  control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' removed issue_comment_focus
+  #' 
+  #' controls:
+  #' - proj size
+  #' - releases control
   #'
-  m.noncore.nbr.standard.3 <- glm.nb(
-    no_non_core ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      proj_size 
-    ,
-    data = oss,
-    control = param.glm.control)
+  form = formula.drop.variable(form.s, "issue_comment_focus")
+  form = formula.add.variable(form, c("proj_size", "releases_control"))
+  m.noncore.nbr.s.6 <- glm.nb(form, data = oss, control = param.glm.control)
+  
+  out <- list()
+  out [[1]] <- m.noncore.nbr.s.1
+  out [[2]] <- m.noncore.nbr.s.2
+  out [[3]] <- m.noncore.nbr.s.3
+  out [[4]] <- m.noncore.nbr.s.4
+  out [[5]] <- m.noncore.nbr.s.5
+  out [[6]] <- m.noncore.nbr.s.6
+  out [[7]] <- m.noncore.nbr.controls
+  
+  m.to.table(out, 
+             title = "Noncore models (standard indicators, glm family: negbin)",
+             m_name = "nbr_nocont_standard") 
+}
+
+estimate.noncore.nbr.standard <- function(oss){
+  
+  m.noncore.nbr.controls <- glm.nb(no_non_core ~ releases_control +
+                                     proj_age +
+                                     proj_size, 
+                                   data = oss, 
+                                   control = param.glm.control)
+  
+  form.s = no_non_core ~
+    rel_high_reputation +
+    rel_experienced_blau +
+    issue_focus_blau +
+    techcontrib_focus_blau +
+    code_comment_focus_blau +
+    issue_comment_focus_blau +
+    rel_persistent_blau + 
+    rel_extensive_blau
   
   #' Negative Binomial GLM
   #' controls: 
-  #' - project size
-  #' - previous releases
-  m.noncore.nbr.standard.4 <- glm.nb(
-    no_non_core ~
-      rel_persistent + 
-      rel_extensive + 
-      issue_focus +
-      code_comment_focus +
-      techcontrib_focus +
-      rel_high_reputation +
-      rel_experienced +
-      proj_size +
-      release_control
-    ,
-    data = oss,
-    control = param.glm.control)
+  #' - none
+  #'
+  form = form.s
+  m.noncore.nbr.s.1<- glm.nb(form, data = oss, control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' controls: 
+  #' - releases_control ***
+  #'
+  form = formula.add.variable(form.s, "releases_control")
+  m.noncore.nbr.s.2 <- glm.nb(form, data = oss,  control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' controls: 
+  #' - project age ***
+  #'
+  form = formula.add.variable(form.s, "proj_age")
+  m.noncore.nbr.s.3 <- glm.nb(form, data = oss,  control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' controls: 
+  #' - project size ***
+  form = formula.add.variable(form.s, "proj_size")
+  m.noncore.nbr.s.4 <- glm.nb(form, data = oss, control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' controls:  ***
+  #' - proj size
+  #' - releases control
+  form = formula.add.variable(form.s, c("releases_control", "proj_age", "proj_size"))
+  m.noncore.nbr.s.5 <- glm.nb(form, data = oss,  control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' removed issue_comment_focus
+  #' 
+  #' controls:
+  #' - proj size
+  #' - releases control
+  #'
+  form = formula.drop.variable(form.s, "issue_comment_focus_blau")
+  form = formula.add.variable(form, c("proj_size", "releases_control"))
+  m.noncore.nbr.s.6 <- glm.nb(form, data = oss, control = param.glm.control)
   
   out <- list()
-  out [[1]] <- m.noncore.nbr.standard.1
-  out [[2]] <- m.noncore.nbr.standard.2
-  out [[3]] <- m.noncore.nbr.standard.3
-  out [[4]] <- m.noncore.nbr.standard.4
+  out [[1]] <- m.noncore.nbr.s.1
+  out [[2]] <- m.noncore.nbr.s.2
+  out [[3]] <- m.noncore.nbr.s.3
+  out [[4]] <- m.noncore.nbr.s.4
+  out [[5]] <- m.noncore.nbr.s.5
+  out [[6]] <- m.noncore.nbr.s.6
+  out [[7]] <- m.noncore.nbr.controls
   
   m.to.table(out, 
-             title = "Noncore models (negbin)", 
-             m_name = "nbr_noncore_standard"
-  ) 
-  
+             title = "Noncore models (Blau indicators, glm family: negbin)",
+             m_name = "nbr_nocont_blau") 
 }
+
+
 
 estimate.ci_noncore.nbr.standard <- function(oss){
   
