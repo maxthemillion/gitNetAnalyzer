@@ -74,12 +74,12 @@ calc.col_var <- function(df) {
 #' saves the supplied ggplot under the specified name
 #' @param plot  ggplot2 object
 #' @param name  filename to save the plot to
-save.plot <- function(plot, name){
+save.plot <- function(plot, name, width = param.plot.width, height = param.plot.height){
   png(
     filename = paste(param.plot.out, name, sep = ""),
     res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
+    width = width,
+    height = height,
     units = param.plot.units
   )
   
@@ -407,6 +407,48 @@ ops.scatterplot.a_level.sd <- function(ops){
   save.plot(p, 'scatterplot_a_level.png')
 }
 
+
+projects.boxplot.all <- function(ops){
+  sample.size = 50
+  pool = unique(ops$project)
+  
+  data.sample = sample(pool, sample.size)
+  plot.data = ops[ops$project %in% data.sample,]
+  
+  plot.data.melt = melt(plot.data[,c("proximity_prestige_sd",
+                                     "proj_experience_sd",
+                                     "ratio_code_issue_sd",
+                                     "ratio_technical_discussion_sd",
+                                     "ratio_code_review_contribution_sd",
+                                     "ratio_issue_reports_discussion_sd",
+                                     "persistency_sd",
+                                     "contribution_extent_sd", 
+                                     "project")], 
+                        id = c("project"), 
+                        na.rm = T)
+  
+  p <- ggplot(plot.data.melt, aes(x = project, y = value)) +
+    geom_hline(aes(yintercept= -1), colour="grey", linetype="dashed") +
+    geom_hline(aes(yintercept= 0), colour="black") +
+    geom_hline(aes(yintercept= 1), colour="grey", linetype="dashed") +
+    geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=0.2, notch=FALSE) +
+    theme(axis.text.x=element_blank(),
+          axis.ticks.x=element_blank())+
+    theme(panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black")) +
+    labs(title = "Distribution of faultline items per project",
+         subtitle = paste("Sample of ", sample.size, " projects")) +
+    ylab("deviation from mean in standard deviations") +
+    xlab("projects ")  +
+    ylim(-3, 3) +
+    facet_wrap(~ variable, ncol = 2)
+
+  save.plot(p, "projects_boxplots.png", width = 18, height = 18)
+}
+
+
+
 #'
 #'
 #'
@@ -421,7 +463,7 @@ projects.boxplot.a_level.sd <- function(ops){
   
   # ops.a_level.sd$project <- as.factor(ops.a_level.sd$project)
   
-  p <- ggplot(plot.data, aes(x = project, y = persistency_sd)) +
+  p <- ggplot(plot.data.melt, aes(x = project, y = persistency_sd)) +
     geom_hline(aes(yintercept= -1), colour="grey", linetype="dashed") +
     geom_hline(aes(yintercept= 0), colour="black") +
     geom_hline(aes(yintercept= 1), colour="grey", linetype="dashed") +
@@ -434,11 +476,13 @@ projects.boxplot.a_level.sd <- function(ops){
     labs(title = "Distribution of activity persistency per project",
          subtitle = paste("Sample of ", sample.size, " projects")) +
     ylab("deviation from mean in standard deviations") +
-    xlab("projects ")
-    # + stat_summary(fun.y=mean, colour="darkred", geom="point", shape=18, size=1,show_guide = FALSE)
+    xlab("projects ")    
+  # + stat_summary(fun.y=mean, colour="darkred", geom="point", shape=18, size=1,show_guide = FALSE)
   
   save.plot(p, "projects_persistency_sd.png")
 }
+
+
 projects.boxplot.a_focus.sd <- function(ops){
   sample.size = 50
   pool = unique(ops$project)
@@ -750,7 +794,10 @@ ops  = coerce_new()
 
 # generate some plots
 if(param.plot.ops) {
-  if (T) {
+  
+  projects.boxplot.all(ops)
+  
+  if (F) {
     # ops.boxplot.a_focus.simple(ops)
     # ops.boxplot.a_focus.sd(ops)
     ops.boxplot.sd(ops)

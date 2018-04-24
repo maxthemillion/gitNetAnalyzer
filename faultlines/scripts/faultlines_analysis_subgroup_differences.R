@@ -7,7 +7,6 @@ library(metap)
 
 
 #### parameters ####
-param.analysis.all = F                          # specifies, whether all or only a single project should be imported and analysed
 param.analysis.groups.minsize = 2             # min group size which qualifies for further analysis
 
 param.dataset = "sp180_c10" # can be "sp180_c10", "sp180_c20", "sp180_c50" or "sp90_c20" 
