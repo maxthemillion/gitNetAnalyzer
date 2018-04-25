@@ -20,6 +20,9 @@ param.glm.control = glm.control(epsilon = 1e-8, maxit = 100, trace = FALSE)
 param.m.transform.blau = T  # no significant effects when untransformed
 param.m.transform.controls = F
 
+param.table.format = "text"  # can be "latex" or "txt"
+param.table.file = ".tex"      # can be .tex or .txt
+
 param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
 param.m.in = paste(param.path.root, "data/models/", param.dataset, "/", sep = "")
 param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/models/tables/", sep = "")
@@ -541,7 +544,7 @@ save.plot <- function(plot, name){
 #'
 #'
 #'
-m.to.table <- function(m_list, title, m_name){
+m.to.table <- function(m_list, title, m_name, label, float.env = "table", ns = NULL){
   
   p_d = c("pearson disp.")
   pR2_McFadden = c("McFadden")
@@ -564,10 +567,18 @@ m.to.table <- function(m_list, title, m_name){
   }
   
   stargazer(m_list, 
-            type = "text", 
+            type = param.table.format, 
             title = title,
             add.lines = list(p_d, pR2_McFadden, pR2_Nagelkerke),
-            out = paste(param.table.out, m_name, ".txt", sep = ""))
+            out = paste(param.table.out, m_name, param.table.file, sep = ""),
+            no.space = F,
+            notes.align = "l",
+            single.row = F,
+            report = "vc*",
+            label = label,
+            float = T,
+            float.env = float.env            
+            )
 }
 
 #'
@@ -594,7 +605,7 @@ report.dispersion <- function(d){
   report <- adply(d, 2, function(x) calc(x), .id = NULL)
   
   stargazer(report, 
-            type = "text", 
+            type = param.table.format, 
             title = "Dependent variables summary statistics",
             out = paste(param.table.out, "dependents_summary_stats.txt", sep = ""),
             summary = F)
@@ -669,7 +680,10 @@ estimate.releases.nbr.standard <- function(){
   
   m.to.table(out, 
              title = "Release models (standard indicators, glm family: negbin)",
-             m_name = "nbr_releases_standard")
+             m_name = "nbr_releases_simple",
+             label = "tab:res_nbr_release_simple",
+             float.env = "sidewaystable",
+             ns = T)
   
   message("VIF Model 5:")
   print(vif(m.releases.nbr.s.5))
@@ -705,10 +719,7 @@ estimate.releases.zinbr.standard <- function(nbr){
                                           dist = "negbin")
   
   
-  #' ZINBR 5
-  #' controlling for project size and previous releases
-  #'
-  m.releases.zinbr.standard.6 <- zeroinfl(releases ~
+    m.releases.zinbr.standard.5 <- zeroinfl(releases ~
                                             rel_high_reputation +
                                             rel_experienced +
                                             issue_focus +
@@ -724,14 +735,34 @@ estimate.releases.zinbr.standard <- function(nbr){
                                           data = oss.releases,
                                           dist = "negbin")
   
+  #' ZINBR 5
+  #' controlling for project size and previous releases
+  #'
+  m.releases.zinbr.standard.6 <- zeroinfl(releases ~
+                                            rel_high_reputation +
+                                            rel_experienced +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
+                                            releases_control_cat +
+                                            proj_age +
+                                            proj_size | releases_control_cat
+                                          ,
+                                          data = oss.releases,
+                                          dist = "negbin")
+  
   out <- list()
   out [[1]] <- m.releases.zinbr.standard.1
-  out [[2]] <- m.releases.zinbr.standard.6
-  out [[3]] <- m.releases.zinbr.controls
+  out [[2]] <- m.releases.zinbr.standard.5
+  out [[3]] <- m.releases.zinbr.standard.6
+  out [[4]] <- m.releases.zinbr.controls
   
   m.to.table(out, 
              title = "Zero inflated release models (standard indicators, glm family: zi-negbin)", 
-             m_name = "zinbr_releases_standard"
+             m_name = "zinbr_releases_simple",
+             label = "tab:res_zinbr_release_simple"
   ) 
   
   message("vuong test")
@@ -740,7 +771,7 @@ estimate.releases.zinbr.standard <- function(nbr){
 }
 
 #### non-core models standard ####
-estimate.noncore.nbr.standard <- function(oss){
+estimate.noncore.nbr.standard <- function(){
   
   m.noncore.nbr.controls <- glm.nb(no_non_core ~ releases_control_cat +
                                      proj_age +
@@ -806,7 +837,9 @@ estimate.noncore.nbr.standard <- function(oss){
   
   m.to.table(out, 
              title = "Noncore models (standard indicators, glm family: negbin)",
-             m_name = "nbr_nocore_standard") 
+             m_name = "nbr_nocore_simple",
+             label = "tab:res_noncore_simple",
+             float.env = "sidewaystable") 
   
   message("VIF model 4")
   print(vif(m.noncore.nbr.s.4))
@@ -883,7 +916,8 @@ estimate.ci.standard <- function(){
 
   m.to.table(out, 
              title = "Controlling for CI (Standard indicators)", 
-             m_name = "ci_standard"
+             m_name = "ci_standard",
+             label = "tab:res_ci_models"
   ) 
 }
 
@@ -978,7 +1012,8 @@ estimate.releases.blau <- function(){
   
   m.to.table(out, 
              title = "Release models - (Blau indicators)", 
-             m_name = "nbr_releases_blau"
+             m_name = "nbr_releases_blau",
+             label = "tab:res_releases_blau"
   ) 
 }
 estimate.noncore.blau <- function(){
@@ -1016,7 +1051,8 @@ estimate.noncore.blau <- function(){
     
     m.to.table(out, 
                title = "Noncore models (negbin) - (Blau indicators)", 
-               m_name = "nbr_noncore_blau"
+               m_name = "nbr_noncore_blau",
+               label = "tab:res_noncore_blau"
     ) 
   
 }
