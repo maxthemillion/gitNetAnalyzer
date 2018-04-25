@@ -4,24 +4,34 @@ library(reshape2)
 library(car)
 library(MASS)
 library(stargazer)
+library(plyr)
+library(pscl)
+library(modEvA)
 
 #### parameters ####
+param.dataset = "sp180_c20" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
+
 param.plot.facets = F
 param.plot.correlation = F
 param.plot.hist = F
-param.models.estimate = T
+param.models.estimate = F
 param.glm.control = glm.control(epsilon = 1e-8, maxit = 100, trace = FALSE)
 
-param.m.add_const_to_releases = F # adding a constant would violate distribution assumption, leave F
-param.m.transform.blau = T
-param.m.transform.controls = T
+param.m.transform.blau = T  # no significant effects when untransformed
+param.m.transform.controls = F
+
+param.table.format = "text"  # can be "latex" or "txt"
+param.table.file = ".tex"      # can be .tex or .txt
+
+param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
+param.m.in = paste(param.path.root, "data/models/", param.dataset, "/", sep = "")
+param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/models/tables/", sep = "")
+param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/models/plots/", sep = "")
 
 param.plot.res = 300
-param.plot.exp =  "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/plots/"
 param.plot.width = 12
 param.plot.height = 12
 param.plot.units = "cm"
-
 
 old <- theme_set(theme_gray())
 theme_update(axis.title = element_text(size = rel(0.65)))
@@ -33,21 +43,33 @@ theme_update(axis.text = element_text(size = rel(0.5)))
 #' @return data frame containing all model variables
 #'
 import.variables <- function(){
+  
   # read independent variables
-  independents <- read.csv("/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/independents.csv")
+  independents <- read.csv(paste(param.m.in, "independents.csv", sep = ""))
   
   # read dependent variables
-  dependents <- read.csv("/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/success.csv")
+  dependents <- read.csv(paste(param.m.in, "success.csv", sep = ""))
   
-  ci <- read.csv("/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/analysis/faultlines/model/travis.csv")
+  ci <- read.csv(paste(param.path.root, "data/models/travis.csv", sep =""))[, c("project", "has_travis")]
   
   # merge
-  res = merge(x = independents, y = dependents, by = "project")
-  res = merge(x = res, y=ci, by = "project")
+  oss = merge(x = independents, y = dependents, by = "project")
+  oss = merge(x = oss, y=ci, by = "project")
   
-  res$has_travis = as.factor(res$has_travis)
+  oss$has_travis = as.factor(oss$has_travis)
   
-  return(res)
+  if(param.m.transform.blau){
+    oss = transform.blau(oss)
+  }
+  
+  if(param.m.transform.controls){
+    oss = transform.controls(oss)
+  }
+  
+  # calculate categorial variable for zero inflated NBR and PR
+  oss$releases_control_cat = as.factor(oss$releases_control > 0)
+  
+  return(oss)
 }
 
 #' separates dependent variables for visualization purposes
@@ -98,24 +120,36 @@ get_independents <- function(oss){
 #'
 #'
 hist.dep <- function(df){
-  dfmelt <- melt(df)
   
-  p <- ggplot(dfmelt, aes(x = value)) +
+  
+  dfmelt <- melt(df[,c("releases", "no_non_core")])
+  
+  png(
+    filename = paste(param.plot.out, "dist_dependents.png", sep = ""),
+    res = param.plot.res,
+    width = param.plot.width,
+    height = param.plot.height,
+    units = param.plot.units
+  )
+  
+  p1 <- ggplot(dfmelt, aes(x = value)) +
     geom_histogram() +
     facet_wrap(~variable, scales = "free") +
-    labs(title = "Distribution of dependent variables")
+    labs(subtitle = "no transformation")
   
-  save.plot(p, "models/histogram_dependents.png")
+  # save.plot(p, "histogram_dependents.png")
   
-  df <- log(df + 1)
-  dfmelt <- melt(df)
+  dfmelt <-melt(log(df[,c("releases", "no_non_core")] + 1))
   
-  p <- ggplot(dfmelt, aes(x = value)) +
+  p2 <- ggplot(dfmelt, aes(x = value)) +
     geom_histogram() +
     facet_wrap(~variable, scales = "free") +
-    labs(title = "Distribution of dependent variables", subtitle = "log-transformed")
+    labs(subtitle = "log-transformed")
   
-  save.plot(p, "models/histogram_dependents_log.png")
+  grid.arrange(p1, p2, top = "Distribution of dependent variables", nrow = 2)
+  
+  dev.off()
+  # save.plot(p, "histogram_dependents_log.png")
 }
 
 #'
@@ -149,7 +183,7 @@ hist.indep <- function(df){
     labs(title = "Distribution of independent variables",
          subtitle = "no transformation")
   
-  save.plot(p, "models/histogram_independents.png")
+  save.plot(p, "histogram_independents.png")
   
   p <- ggplot(dfmelt2, aes(x = value)) +
     geom_histogram() +
@@ -157,10 +191,9 @@ hist.indep <- function(df){
     labs(title = "Distribution of independent variables",
          subtitle = "blau-transformed")
   
-  save.plot(p, "models/histogram_independents_blau.png")
+  save.plot(p, "histogram_independents_blau.png")
   
 }
-
 
 #'
 #'
@@ -307,23 +340,6 @@ generate.facet.no_non_core <- function(df){
   save.plot(p, paste("facet_plot_no_non_core", ".png", sep = ""))
 }
 
-#' saves the supplied ggplot under the specified name
-#' @param plot  ggplot2 object
-#' @param name  filename to save the plot to
-save.plot <- function(plot, name){
-  png(
-    filename = paste(param.plot.exp, name, sep = ""),
-    res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
-    units = param.plot.units
-  )
-  
-  print(plot)
-  
-  dev.off()
-}
-
 #'
 #'
 #'
@@ -338,6 +354,7 @@ plot.facets <- function(oss){
 #'
 #'
 c.heatmap <- function(df, title, subtitle = NULL, file.path, reorder = T){
+  
   c_m = cor(df, use = "pairwise.complete.obs")
   # stargazer(c, type = "text", out = paste(param.plot.exp, "models/correlation_1_as_is.txt", sep  =""))
   
@@ -391,7 +408,7 @@ reorder_cormat <- function(c){
   return(c)
 }
 
-### transformations ###
+#### transformations ####
 
 #' transform right skewed blau measures
 #'
@@ -406,7 +423,7 @@ transform.blau <- function(oss){
     "techcontrib_focus_blau",
     "rel_experienced_blau",
     "issue_focus_blau")
-
+  
   for (i in 1:length(names)){
     oss[, names[[i]] ] <- log(((1 - oss[, names[[i]] ]) * 100) + 1)
   }
@@ -419,7 +436,7 @@ transform.blau <- function(oss){
     labs(title = "Distribution of transformed blau",
          subtitle = "log(((1 - x) * 100) + 1)")
   
-  save.plot(p, "models/histogram_blau_transf.png")
+  save.plot(p, "histogram_blau_transf.png")
   
   return(oss)
 }
@@ -437,11 +454,12 @@ transform.controls<- function(oss){
     geom_histogram() +
     facet_wrap(~variable, scales = "free") +
     labs(title = "Distribution of control variables")
-  save.plot(p, "models/histogram_controls.png")
+  save.plot(p, "histogram_controls.png")
   
   # oss$releases_control <- as.factor(oss$releases_control > 0)
   
-  oss$proj_size <- (oss$proj_size + 1)
+  oss$proj_size <- log(oss$proj_size + 1)
+  
   # oss$proj_age <- log(oss$proj_age + 1)
   
   dfmelt <- melt(oss[, c("releases_control",
@@ -453,7 +471,7 @@ transform.controls<- function(oss){
     facet_wrap(~variable, scales = "free") +
     labs(title = "Distribution of control variables",
          subtitle = "controls log-transformed")
-  save.plot(p, "models/histogram_controls_log.png")
+  save.plot(p, "histogram_controls_log.png")
   
   return(oss)
 }
@@ -461,29 +479,106 @@ transform.controls<- function(oss){
 #'
 #'
 #'
-m.to.table <- function(m_list, title, m_name){
+formula.add.variable <- function(form, var){
+  vars = all.vars(form)
+  resp = vars[1]
+  rhs = vars[2:length(vars)]
+  
+  len_init = length(rhs)
+  
+  for (i in 1:length(var)){
+    rhs[len_init + i] <- var[i]
+  }
+  
+  return(reformulate(rhs, response=resp))
+}
+
+#'
+#'
+#'
+formula.drop.variable <- function(form, var){
+  vars = all.vars(form)
+  resp = vars[1]
+  rhs = vars[2:length(vars)]
+  
+  pos = match(var, rhs)
+  
+  return(reformulate(rhs[-pos], resp))
+}
+
+#'
+#'
+#'
+outliers.remove.releases <- function(oss){
+  oss <- oss[-c(76, 190, 262, 386, 451, 467),  ]
+  return(oss)  
+}
+
+#'
+#'
+#'
+outliers.remove.noncore <- function(oss){
+  oss <- oss[-c(37, 234), ]
+  
+  return(oss)
+}
+
+#### output ####
+#' saves the supplied ggplot under the specified name
+#' @param plot  ggplot2 object
+#' @param name  filename to save the plot to
+save.plot <- function(plot, name){
+  png(
+    filename = paste(param.plot.out, name, sep = ""),
+    res = param.plot.res,
+    width = param.plot.width,
+    height = param.plot.height,
+    units = param.plot.units
+  )
+  
+  print(plot)
+  
+  dev.off()
+}
+
+#'
+#'
+#'
+m.to.table <- function(m_list, title, m_name, label, float.env = "table", ns = NULL){
   
   p_d = c("pearson disp.")
+  pR2_McFadden = c("McFadden")
+  pR2_Nagelkerke = c("Nagelkerke")
   for(i in 1:length((m_list))){
+    
+    if("glm" %in% class(m_list[[i]])){
+      # calculate pseudo R2 for NBRs
+      pR2 = modEvA::RsqGLM(m_list[[i]])
+      pR2_McFadden[[i + 1]] = round(pR2$McFadden, digits = 4)
+      pR2_Nagelkerke[[i + 1]] = round(pR2$Nagelkerke, digits = 4)
+    } else if("zeroinfl" %in% class(m_list[[i]])){
+      
+      pR2_McFadden[[i + 1]] = round(
+        (1 - summary(m_list[[i]])$loglik/update(m_list[[i]], . ~ 1)$loglik)
+      , digits = 4)
+      pR2_Nagelkerke[[i + 1]] = "-"
+    }
     p_d[[i + 1]] = pearson.dispersion(m_list[[i]])
   }
   
-  
-  if(param.m.transform.blau){
-    m_name = paste(m_name, "btf", sep = "_")
-    title = paste(title, " - log(blau)")
-  }
-  
-  if(param.m.transform.controls){
-    m_name = paste(m_name, "ctf", sep = "_")
-    title = paste(title, " - log(controls)")
-  }
-  
   stargazer(m_list, 
-            type = "text", 
+            type = param.table.format, 
             title = title,
-            add.lines = list(p_d),
-            out = paste(param.plot.exp, "models/", m_name, ".txt", sep = ""))
+            add.lines = list(p_d, pR2_McFadden, pR2_Nagelkerke),
+            out = paste(param.table.out, m_name, param.table.file, sep = ""),
+            no.space = F,
+            notes.align = "l",
+            single.row = F,
+            report = "vc*",
+            label = label,
+            float = T,
+            float.env = float.env            
+            )
 }
 
 #'
@@ -495,814 +590,487 @@ pearson.dispersion <- function(m){
   
 }
 
-#### release models ####
-estimate.releases.glmnb.blau <- function(oss){
-
-  if(param.m.add_const_to_releases){
-    oss$releases <- oss$releases + 1
-    oss$releases_control <- oss$releases_control + 1
+#'
+#'
+#'
+report.dispersion <- function(d){
+  calc <- function(x) {
+    
+    return(data.frame(variable = names(x),
+                      var = round(var(x[[1]]), digits = 1),
+                      mean = round(mean(x[[1]]), digits = 1)
+    ))
   }
   
-  #' Model specification:
+  report <- adply(d, 2, function(x) calc(x), .id = NULL)
+  
+  stargazer(report, 
+            type = param.table.format, 
+            title = "Dependent variables summary statistics",
+            out = paste(param.table.out, "dependents_summary_stats.txt", sep = ""),
+            summary = F)
+}
+
+
+#### release models standard ####
+estimate.releases.nbr.standard <- function(){
+  
+  m.releases.nbr.controls <- glm.nb(releases ~ releases_control_cat +
+                                      proj_age +
+                                      proj_size, 
+                                    data = oss.releases, 
+                                    control = param.glm.control)
+  
+  form.s = releases ~
+    rel_high_reputation +
+    rel_experienced +
+    issue_focus +
+    techcontrib_focus +
+    code_comment_focus +
+    issue_comment_focus +
+    rel_persistent + 
+    rel_extensive
+  
   #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - releases + 1 ***
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
   #' controls: 
   #' - none
   #'
-  m.releases.glmnb.blau.2 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  form = form.s
+  m.releases.nbr.s.1<- glm.nb(form, data = oss.releases, control = param.glm.control)
   
-  #' Model specification:
   #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - releases
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
   #' controls: 
   #' - releases_control ***
   #'
-  m.releases.glmnb.blau.3 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  (releases_control)
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  form = formula.add.variable(form.s, "releases_control_cat")
+  m.releases.nbr.s.2 <- glm.nb(form, data = oss.releases,  control = param.glm.control)
   
-  #' Model specification:
   #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - releases + 1
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
   #' controls: 
   #' - project age ***
   #'
-  m.releases.glmnb.blau.4 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  proj_age
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age"))
+  m.releases.nbr.s.3 <- glm.nb(form, data = oss.releases,  control = param.glm.control)
   
-  #' Model specification:
   #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - releases + 1
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: 
-  #' - project size ***
-  #'
-  m.releases.glmnb.blau.5 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  proj_size
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - releases + 1 ***
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: ***
-  #' - project age
-  #' - releases control + 1
-  #' - project size 
-  #'
-  m.releases.glmnb.blau.6 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  (releases_control) +
-                  proj_size
-#                  + proj_age
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  out <- m.releases.glmnb.blau.2(oss)    # only predictors
-  out <- append(out, list(m.releases.glmnb.blau.3(oss)[[1]]))    # 
-#  out <- append(out, list(m.releases.glmnb.blau.4(oss)[[1]]))    # 
-  out <- append(out, list(m.releases.glmnb.blau.5(oss)[[1]]))    # 
-  out <- append(out, m.releases.glmnb.blau.6(oss))    # all shares and controls
-  
-    m.to.table(out, 
-             title = "Release models", 
-             m_name = "glmnb_releases_blau"
-             ) 
-  
-}
-
-estimate.releases.glmnb.standard <- function(oss){
-  const = 0
-  if(param.m.add_const_to_releases){
-    const = 1
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - releases + 1 ***
-  #' 
-  #' predictors: 
-  #' - all faultine ratios
-  #' 
-  #' controls: 
-  #' - none
-  #'
-  m.releases.glmnb.standard.2 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent + 
-                  rel_extensive + 
-                  issue_focus +
-                  code_comment_focus +
-                  issue_comment_focus +
-                  techcontrib_focus +
-                  rel_high_reputation +
-                  rel_experienced,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - releases + 1
-  #' 
-  #' predictors: 
-  #' - all faultine ratios
-  #' 
-  #' controls: 
-  #' - releases_control + 1 ***
-  #'
-  m.releases.glmnb.standard.3 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent + 
-                  rel_extensive + 
-                  issue_focus +
-                  code_comment_focus +
-                  issue_comment_focus +
-                  techcontrib_focus +
-                  rel_high_reputation +
-                  rel_experienced +
-                  (releases_control)
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - releases + 1
-  #' 
-  #' predictors: 
-  #' - all faultine ratios
-  #' 
-  #' controls: 
-  #' - project age ***
-  #'
-  m.releases.glmnb.standard.4 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent + 
-                  rel_extensive + 
-                  issue_focus +
-                  code_comment_focus +
-                  issue_comment_focus +
-                  techcontrib_focus +
-                  rel_high_reputation +
-                  rel_experienced
-#                 + proj_age
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - releases + 1
-  #' 
-  #' predictors: 
-  #' - all faultine ratios
-  #' 
-  #' controls: 
-  #' - project size ***
-  #'
-  m.releases.glmnb.standard.5 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent + 
-                  rel_extensive + 
-                  issue_focus +
-                  code_comment_focus +
-                  issue_comment_focus +
-                  techcontrib_focus +
-                  rel_high_reputation +
-                  rel_experienced +
-                  proj_size
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - releases + 1
-  #' 
-  #' predictors: 
-  #' - all faultine ratios
-  #' 
   #' controls:  ***
-  #' - project age
+  #' - proj size
+  #' - releases control
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
+  m.releases.nbr.s.5 <- glm.nb(form, data = oss.releases,  control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' removed issue_comment_focus
+  #' 
+  #' controls:
   #' - proj size
   #' - releases control
   #'
-  m.releases.glmnb.standard.6 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent + 
-                  rel_extensive + 
-                  issue_focus +
-                  code_comment_focus +
-                  issue_comment_focus +
-                  techcontrib_focus +
-                  rel_high_reputation +
-                  rel_experienced +
-                  (releases_control) +
-#                  proj_age +
-                  proj_size
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  form = formula.drop.variable(form.s, "issue_focus")
+  form = formula.add.variable(form, c("releases_control_cat", "proj_age", "proj_size"))
+  m.releases.nbr.s.6 <- glm.nb(form, data = oss.releases, control = param.glm.control)
   
-  out <- m.releases.glmnb.standard.2(oss)    # only predictors on (releases+1)
-  out <- append(out, list(m.releases.glmnb.standard.3(oss)[[1]]))    # include releases_control
-#  out <- append(out, list(m.releases.glmnb.standard.4(oss)[[1]]))    # include proj_age
-  out <- append(out, list(m.releases.glmnb.standard.5(oss)[[1]]))    # include proj_size
-  out <- append(out, m.releases.glmnb.standard.6(oss))    # all shares and controls
+  out <- list()
+  out [[1]] <- m.releases.nbr.s.1
+  out [[2]] <- m.releases.nbr.s.2
+  out [[3]] <- m.releases.nbr.s.3
+  out [[4]] <- m.releases.nbr.s.5
+  out [[5]] <- m.releases.nbr.s.6
+  out [[6]] <- m.releases.nbr.controls
   
   m.to.table(out, 
-             title = "Release models (standard indicators)",
-             m_name = "glmnb_releases_standard") 
+             title = "Release models (standard indicators, glm family: negbin)",
+             m_name = "nbr_releases_simple",
+             label = "tab:res_nbr_release_simple",
+             float.env = "sidewaystable",
+             ns = T)
+  
+  message("VIF Model 5:")
+  print(vif(m.releases.nbr.s.5))
+  
+  # message("Likelihood ratio test:")
+  # print(summary(pscl::odTest(m.releases.nbr.s.6)))
+  
+  return(m.releases.nbr.s.6)
 }
 
-#### non-core models ####
-estimate.noncore.glmnb.blau <- function(oss){
+estimate.releases.zinbr.standard <- function(nbr){
+
+  m.releases.zinbr.controls <- zeroinfl(releases ~ releases_control_cat + proj_age + proj_size | releases_control_cat,
+                                        data = oss.releases,
+                                        EM = T,
+                                        dist = "negbin")
   
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - number of non-core contributors ***
-  #'  
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: 
-  #' - project size ***
+  #' ZINBR 1
+  #' no controls
   #'
-  m.non_core.glmnb.blau.1 <- function(oss){
-    m <- glm.nb((no_non_core) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  proj_size
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  m.releases.zinbr.standard.1 <- zeroinfl(releases ~
+                                            rel_high_reputation +
+                                            rel_experienced +
+                                            issue_focus +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive | releases_control_cat
+                                          ,
+                                          data = oss.releases,
+                                          EM = T,
+                                          dist = "negbin")
   
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - number of non-core contributors 
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: 
-  #' - project age ***
+  
+    m.releases.zinbr.standard.5 <- zeroinfl(releases ~
+                                            rel_high_reputation +
+                                            rel_experienced +
+                                            issue_focus +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
+                                            releases_control_cat +
+                                            proj_age +
+                                            proj_size | releases_control_cat
+                                          ,
+                                          data = oss.releases,
+                                          dist = "negbin")
+  
+  #' ZINBR 5
+  #' controlling for project size and previous releases
   #'
-  m.non_core.glmnb.blau.2 <- function(oss){
-    m <- glm.nb((no_non_core) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau
-#                 + proj_age
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  m.releases.zinbr.standard.6 <- zeroinfl(releases ~
+                                            rel_high_reputation +
+                                            rel_experienced +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
+                                            releases_control_cat +
+                                            proj_age +
+                                            proj_size | releases_control_cat
+                                          ,
+                                          data = oss.releases,
+                                          dist = "negbin")
   
+  out <- list()
+  out [[1]] <- m.releases.zinbr.standard.1
+  out [[2]] <- m.releases.zinbr.standard.5
+  out [[3]] <- m.releases.zinbr.standard.6
+  out [[4]] <- m.releases.zinbr.controls
   
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - number of non-core contributors 
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: ***
-  #' - project age
-  #' - project size 
-  #'
-  m.non_core.glmnb.blau.3 <- function(oss){
-    m <- glm.nb((no_non_core) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  proj_size
-#                 + proj_age
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    p_disp <- pearson.dispersion(m)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-#  out <- m.non_core.glmnb.blau.1(oss)    # only predictors
-#  out <- append(out, list(m.non_core.glmnb.blau.2(oss)[[1]]))    # 
-#  out <- append(out, m.non_core.glmnb.blau.3(oss))        # incl. controls
-  out <-  m.non_core.glmnb.blau.3(oss)
-  
-  
-  m_name = "glmnb_non_core_blau"
-    
   m.to.table(out, 
-             title = "Community engagement models", 
-             m_name = m_name
+             title = "Zero inflated release models (standard indicators, glm family: zi-negbin)", 
+             m_name = "zinbr_releases_simple",
+             label = "tab:res_zinbr_release_simple"
   ) 
   
+  message("vuong test")
+  print(vuong(nbr, m.releases.zinbr.standard.6))
+  
 }
 
-
-#### CI models ####
-estimate.ci_releases.glmnb.blau <- function(oss){
+#### non-core models standard ####
+estimate.noncore.nbr.standard <- function(){
   
-  if(param.m.add_const_to_releases){
-    oss$releases <- oss$releases + 1
-    oss$releases_control <- oss$releases_control + 1
-  }
+  m.noncore.nbr.controls <- glm.nb(no_non_core ~ releases_control_cat +
+                                     proj_age +
+                                     proj_size, 
+                                   data = oss.noncore, 
+                                   control = param.glm.control)
   
-  #' Model specification:
+  form.s = no_non_core ~
+    rel_high_reputation +
+    rel_experienced +
+    issue_focus +
+    techcontrib_focus +
+    code_comment_focus +
+    issue_comment_focus +
+    rel_persistent + 
+    rel_extensive
+  
   #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - releases + 1 ***
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
   #' controls: 
   #' - none
-  #' - ci (yes/no)
   #'
-  m.ci.glmnb.blau.2 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  has_travis,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  form = form.s
+  m.noncore.nbr.s.1<- glm.nb(form, data = oss.noncore, control = param.glm.control)
   
-  #' Model specification:
   #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - releases
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
   #' controls: 
   #' - releases_control ***
-  #' - ci (yes/no)
   #'
-  m.ci.glmnb.blau.3 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  releases_control +
-                  has_travis
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  form = formula.add.variable(form.s, "releases_control_cat")
+  m.noncore.nbr.s.2 <- glm.nb(form, data = oss.noncore,  control = param.glm.control)
   
-  #' Model specification:
   #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - releases + 1
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: 
-  #' - project age ***
-  #' - ci (yes/no)
-  #'
-  m.ci.glmnb.blau.4 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  proj_age +
-                  has_travis
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - releases + 1
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: 
-  #' - project size ***
-  #' - ci (yes/no)
-  #'
-  m.ci.glmnb.blau.5 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  proj_size +
-                  has_travis
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    # process_model(m, "releases_glmnb_3", oss)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - releases + 1 ***
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: ***
-  #' - project age
-  #' - releases control + 1
-  #' - project size 
-  #' - ci (yes/no)
-  #'
-  m.ci.glmnb.blau.6 <- function(oss){
-    m <- glm.nb((releases) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  (releases_control) +
-                  proj_size +
-                  has_travis
-                #                  + proj_age
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  out <- m.ci.glmnb.blau.2(oss)    # only predictors
-  out <- append(out, list(m.ci.glmnb.blau.3(oss)[[1]]))    # 
-  #  out <- append(out, list(m.ci.glmnb.blau.4(oss)[[1]]))    # 
-  out <- append(out, list(m.ci.glmnb.blau.5(oss)[[1]]))    # 
-  out <- append(out, m.ci.glmnb.blau.6(oss))    # all shares and controls
-  
-  m.to.table(out, 
-             title = "Release models - controlling for CI", 
-             m_name = "glmnb_ci_releases_blau"
-  ) 
-}
-estimate.ci_noncore.glmnb.blau <- function(oss){
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' dependent variable: 
-  #' - number of non-core contributors ***
-  #'  
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: 
-  #' - project size ***
-  #' - ci (yes/no)
-  m.ci_noncore.glmnb.blau.1 <- function(oss){
-    m <- glm.nb((no_non_core) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  proj_size +
-                  has_travis
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
-  
-  #' Model specification:
-  #' Negative Binomial GLM
-  #' 
-  #' 
-  #' dependent variable: 
-  #' - number of non-core contributors 
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
   #' controls: 
   #' - project age ***
   #'
-  m.ci_noncore.glmnb.blau.2 <- function(oss){
-    m <- glm.nb((no_non_core) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  has_travis
-                #                 + proj_age
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age"))
+  m.noncore.nbr.s.3 <- glm.nb(form, data = oss.noncore,  control = param.glm.control)
   
-  
-  #' Model specification:
   #' Negative Binomial GLM
+  #' controls: 
+  #' - project size ***
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
+  m.noncore.nbr.s.4 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' removed issue_comment_focus
   #' 
-  #' dependent variable: 
-  #' - number of non-core contributors 
-  #' 
-  #' predictors: 
-  #' - all faultine ratios (variety diversity indicators were blau transformed!)
-  #' 
-  #' controls: ***
-  #' - project age
-  #' - project size 
+  #' controls:
+  #' - proj size
+  #' - releases control
   #'
-  m.ci_noncore.glmnb.blau.3 <- function(oss){
-    m <- glm.nb((no_non_core) ~
-                  rel_persistent_blau + 
-                  rel_extensive_blau + 
-                  issue_focus_blau +
-                  code_comment_focus_blau +
-                  issue_comment_focus_blau +
-                  techcontrib_focus_blau +
-                  rel_high_reputation +
-                  rel_experienced_blau +
-                  proj_size +
-                  has_travis
-                
-                #                 + proj_age
-                ,
-                data = oss,
-                control = param.glm.control)
-    
-    p_disp <- pearson.dispersion(m)
-    
-    step <- stepAIC(m, direction="both")
-    return(list(m, step))
-  }
+  form = formula.drop.variable(form.s, "issue_focus")
+  form = formula.add.variable(form, c("proj_size", "proj_age", "releases_control_cat"))
+  m.noncore.nbr.s.6 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
   
-  #  out <- m.ci_noncore.glmnb.blau.1(oss)    # only predictors
-  #  out <- append(out, list(m.ci_noncore.glmnb.blau.2(oss)[[1]]))    # 
-  #  out <- append(out, m.ci_noncore.glmnb.blau.3(oss))        # incl. controls
-  out <-  m.ci_noncore.glmnb.blau.3(oss)
-  
-  
-  m_name = "glmnb_ci_noncore_blau"
+  out <- list()
+  out [[1]] <- m.noncore.nbr.s.1
+  out [[2]] <- m.noncore.nbr.s.2
+  out [[3]] <- m.noncore.nbr.s.3
+  out [[4]] <- m.noncore.nbr.s.4
+  out [[5]] <- m.noncore.nbr.s.6
+  out [[6]] <- m.noncore.nbr.controls
   
   m.to.table(out, 
-             title = "Community engagement models - controlling for CI", 
-             m_name = m_name
-  ) 
+             title = "Noncore models (standard indicators, glm family: negbin)",
+             m_name = "nbr_nocore_simple",
+             label = "tab:res_noncore_simple",
+             float.env = "sidewaystable") 
   
+  message("VIF model 4")
+  print(vif(m.noncore.nbr.s.4))
+  }
+
+#### ci models ####
+estimate.ci.standard <- function(){
+  form.s = releases ~
+    rel_persistent + 
+    rel_extensive + 
+    code_comment_focus +
+    issue_comment_focus +
+    techcontrib_focus +
+    rel_high_reputation +
+    rel_experienced +
+    has_travis
+  
+  
+  #' Negative Binomial GLM
+  #' controls: 
+  #' - ci (yes/no)
+  #'
+  m.releases.ci.nbr.standard.1 <- glm.nb(form.s, data = oss.releases, control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' controls: ***
+  #' - releases control
+  #' - project age
+  #' - project size 
+  #' - ci (yes/no)
+  #'
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
+  m.releases.ci.nbr.standard.2 <- glm.nb(form, data = oss.releases, control = param.glm.control)
+  
+  m.releases.ci.zinbr.standard.1 <- zeroinfl(releases ~
+                                            rel_high_reputation +
+                                            rel_experienced +
+                                            techcontrib_focus +
+                                            code_comment_focus +
+                                            issue_comment_focus +
+                                            rel_persistent + 
+                                            rel_extensive +
+                                            has_travis +
+                                            releases_control_cat +
+                                            proj_age +
+                                            proj_size | releases_control_cat
+                                          ,
+                                          data = oss.releases,
+                                          dist = "negbin")
+  
+  #' Negative Binomial GLM
+  #' controls: ***
+  #' - release control
+  #' - project size 
+  #' - has travis
+  #' 
+  form.s = no_non_core ~
+  rel_persistent + 
+    rel_extensive + 
+    code_comment_focus +
+    issue_comment_focus +
+    techcontrib_focus +
+    rel_high_reputation +
+    rel_experienced +
+    has_travis
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_size", "proj_age"))
+  m.noncore.ci.nbr.standard.4 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
+  
+  out <- list()
+  out [[1]] <- m.releases.ci.nbr.standard.1
+  out [[2]] <- m.releases.ci.nbr.standard.2
+  out [[3]] <- m.releases.ci.zinbr.standard.1
+  out [[4]] <- m.noncore.ci.nbr.standard.4
+
+  m.to.table(out, 
+             title = "Controlling for CI (Standard indicators)", 
+             m_name = "ci_standard",
+             label = "tab:res_ci_models"
+  ) 
 }
 
+
+#### Blau Index models ####
+estimate.releases.blau <- function(){
+  
+  m.releases.nbr.controls <- glm.nb(releases ~ releases_control_cat +
+                                      proj_age +
+                                      proj_size, 
+                                    data = oss.releases, 
+                                    control = param.glm.control)
+  
+  form.s = releases ~
+    rel_high_reputation +
+    rel_experienced_blau +
+    issue_focus_blau +
+    techcontrib_focus_blau +
+    code_comment_focus_blau +
+    issue_comment_focus_blau +
+    rel_persistent_blau + 
+    rel_extensive_blau 
+  
+  #' Negative Binomial GLM
+  #' controls: 
+  #' - none
+  #'
+  m.releases.nbr.blau.1 <- glm.nb(form.s, data = oss.releases, control = param.glm.control)
+  
+  
+  #' Negative Binomial GLM
+  #' controls: 
+  #' - project size ***
+  #'
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
+  m.releases.nbr.blau.4 <- glm.nb(form, data = oss.releases, control = param.glm.control)
+  
+  #' Negative Binomial GLM
+  #' controls:
+  #' - releases control
+  #' - project size 
+  #'
+  #'
+  form = formula.drop.variable(form.s, "issue_comment_focus_blau")
+  form = formula.add.variable(form, c("releases_control_cat", "proj_age", "proj_size"))
+  m.releases.nbr.blau.6 <- glm.nb(form, data = oss.releases, control = param.glm.control)
+  
+  
+  #' ZINBR 1
+  #' no controls
+  #'
+  m.releases.zinbr.blau.1 <- zeroinfl(releases ~
+                                        rel_persistent_blau + 
+                                        rel_extensive_blau + 
+                                        issue_focus_blau +
+                                        code_comment_focus_blau +
+                                        techcontrib_focus_blau +
+                                        rel_high_reputation +
+                                        rel_experienced_blau | releases_control_cat
+                                      ,
+                                      data = oss.releases,
+                                      EM = T,
+                                      dist = "negbin",
+                                      control = zeroinfl.control(method ="BFGS", maxit = 10000, trace = F))
+  
+  
+  #' ZINBR 4
+  #' controlling for project size and previous releases
+  #'
+  m.releases.zinbr.blau.4 <- zeroinfl(releases ~
+                                        rel_persistent_blau + 
+                                        rel_extensive_blau + 
+                                        issue_focus_blau +
+                                        code_comment_focus_blau +
+                                        techcontrib_focus_blau +
+                                        rel_high_reputation +
+                                        rel_experienced_blau +
+                                        releases_control_cat +
+                                        proj_age +
+                                        proj_size | releases_control_cat
+                                      ,
+                                      data = oss.releases,
+                                      dist = "negbin")
+  
+  out <- list()
+  out [[1]] <- m.releases.nbr.blau.1
+  out [[2]] <- m.releases.nbr.blau.4
+  out [[3]] <- m.releases.nbr.blau.6
+  out [[4]] <- m.releases.nbr.controls
+  out [[5]] <- m.releases.zinbr.blau.1
+  out [[6]] <- m.releases.zinbr.blau.4
+  
+  m.to.table(out, 
+             title = "Release models - (Blau indicators)", 
+             m_name = "nbr_releases_blau",
+             label = "tab:res_releases_blau"
+  ) 
+}
+estimate.noncore.blau <- function(){
+  m.noncore.nbr.controls <- glm.nb(no_non_core ~ releases_control +
+                                     proj_age +
+                                     proj_size, 
+                                   data = oss.noncore, 
+                                   control = param.glm.control)
+  
+  form.s = no_non_core ~
+    rel_persistent_blau + 
+    rel_extensive_blau + 
+    issue_focus_blau +
+    code_comment_focus_blau +
+    issue_comment_focus_blau +
+    techcontrib_focus_blau +
+    rel_high_reputation +
+    rel_experienced_blau
+  
+  m.noncore.nbr.blau.1 <- glm.nb(form.s, data = oss.noncore, control = param.glm.control)
+  
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
+  m.noncore.nbr.blau.2 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
+  
+  
+  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
+  form = formula.drop.variable(form, "issue_comment_focus_blau")
+  m.noncore.nbr.blau.3 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
+  
+    out <- list()
+    out [[1]] <- m.noncore.nbr.blau.1
+    out [[2]] <- m.noncore.nbr.blau.2
+    out [[3]] <- m.noncore.nbr.blau.3
+    out [[4]] <- m.noncore.nbr.controls
+    
+    m.to.table(out, 
+               title = "Noncore models (negbin) - (Blau indicators)", 
+               m_name = "nbr_noncore_blau",
+               label = "tab:res_noncore_blau"
+    ) 
+  
+}
 
 #### main ####
-
 main <- function(){
-  oss = import.variables()
-  independents <- get_independents(oss)
-  dependents <- get_dependents(oss)
+  # clear environment
+  message("clearing global environment...")
+  rm(list = ls())
+  
+  oss.all <<- import.variables()
+  oss.releases <<- outliers.remove.releases(oss.all)
+  oss.noncore <<- outliers.remove.noncore(oss.all)
+  
+  independents <- get_independents(oss.all)
+  dependents <- get_dependents(oss.all)
+  
+  report.dispersion(dependents[, c("releases", "no_non_core")])
   
   # plot distributions
   if(param.plot.hist){
@@ -1312,61 +1080,50 @@ main <- function(){
   
   if(param.plot.correlation){
     # create correlation matrices
-    c.heatmap(independents[, -1], 
-              title = "Pearson correlation",
-              subtitle = "independent variables",
-              file.path = "models/cor_independents.png")
+    # c.heatmap(independents[, -1], 
+    c.heatmap(subset(independents, select = -c(project, 
+                                               issue_comment_focus_blau, 
+                                               issue_focus_blau, 
+                                               rel_experienced_blau,
+                                               rel_persistent_blau,
+                                               code_comment_focus_blau,
+                                               techcontrib_focus_blau,
+                                               modularity,
+                                               no_subgroups,
+                                               rel_extensive_blau
+    )),
+    title = "Pearson correlation",
+    subtitle = "independent variables",
+    file.path = "cor_independents.png")
     
-    c.heatmap(independents[, c("issue_focus", "issue_comment_focus", "code_comment_focus", "techcontrib_focus")], 
+    c.heatmap(independents[, c("issue_focus_blau", 
+                               "issue_comment_focus_blau", 
+                               "code_comment_focus_blau", 
+                               "techcontrib_focus_blau")], 
               title = "Pearson correlation",
               subtitle = "subgroup shares",
-              file.path = "models/cor_subgroup_shares.png",
+              file.path = "cor_subgroup_shares.png",
               reorder = F)
     
     c.heatmap(dependents[, -1],
               title = "Pearson correlation",
               subtitle = "dependent variables",
-              file.path = "models/cor_dependents.png")
-    
-    c.heatmap(oss[, -1],
-              title = "Pearson correlation",
-              subtitle = "all variables",
-              file.path = "models/cor_all.png",
-              reorder = F)
+              file.path = "cor_dependents.png")
   }
   
   if(param.plot.facets){ 
     plot.facets(oss)
   }
   
-  if(param.m.transform.blau){
-    oss <- transform.blau(oss)
-  }
+  nbr <- estimate.releases.nbr.standard()
+  estimate.releases.zinbr.standard(nbr)
   
-  if(param.m.transform.controls){
-    oss = transform.controls(oss)
-  }
+  estimate.noncore.nbr.standard()
+  estimate.ci.standard()
   
-  # estimate some models
-  if(param.models.estimate){
-    
-    if(T){
-      estimate.releases.glmnb.standard(oss)
-      estimate.releases.glmnb.blau(oss)
-      
-      # estimate.releases.zinb.blau/standard(oss) -> read about how to compare it here: https://statisticalhorizons.com/zero-inflated-models
-    }
-    
-    if(T){
-      estimate.noncore.glmnb.blau(oss)
-    }
-    
-    if(T){
-      estimate.ci_releases.glmnb.blau(oss)
-      estimate.ci_noncore.glmnb.blau(oss)
-    }
-    
+  estimate.releases.blau()
+  estimate.noncore.blau()
   }
-}
+
 
 main()

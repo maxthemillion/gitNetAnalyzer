@@ -27,7 +27,7 @@ param.analysis.success.time_lag = 0
 
 # number of contributions per day that must be made on average 
 # such that a developer belongs to the dev_core
-param.analysis.dev_core.min = 10/180
+param.analysis.dev_core.min = 50/180
 
 
 #### cypher queries ####
