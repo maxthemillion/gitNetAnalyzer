@@ -10,11 +10,11 @@ library(modEvA)
 
 #### parameters ####
 param.dataset = "sp180_c20" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
+param.sd.median = F
 
 param.plot.facets = F
-param.plot.correlation = F
-param.plot.hist = F
-param.models.estimate = F
+param.plot.correlation = T
+param.plot.hist = T
 param.glm.control = glm.control(epsilon = 1e-8, maxit = 100, trace = FALSE)
 
 param.m.transform.blau = T  # no significant effects when untransformed
@@ -24,9 +24,16 @@ param.table.format = "text"  # can be "latex" or "txt"
 param.table.file = ".tex"      # can be .tex or .txt
 
 param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
-param.m.in = paste(param.path.root, "data/models/", param.dataset, "/", sep = "")
-param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/models/tables/", sep = "")
-param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/models/plots/", sep = "")
+
+if(param.sd.median){
+  param.m.in = paste(param.path.root, "data/models_median/", param.dataset, "/", sep = "")
+  param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/models_median/tables/", sep = "")
+  param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/models_median/plots/", sep = "")
+} else {
+  param.m.in = paste(param.path.root, "data/models/", param.dataset, "/", sep = "")
+  param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/models/tables/", sep = "")
+  param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/models/plots/", sep = "")
+}
 
 param.plot.res = 300
 param.plot.width = 12
