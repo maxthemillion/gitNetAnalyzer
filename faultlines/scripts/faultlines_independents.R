@@ -15,10 +15,13 @@ library(plyr)
 # define which dataset to use. can be "sp180_c10", "sp180_c20", "sp180_c50"or "sp90_c20" 
 param.dataset = "sp180_c20" 
 
+# use median centering to calculate shares
+param.sd.median = T
+
 # which parts of the code should be executed?
 param.plot.ops = T                 # should operationalisations be plotted?
-param.independents.generate = F    # should independents be generated?
-param.plot.ind = F                 # should independents be plotted?
+param.independents.generate = T    # should independents be generated?
+param.plot.ind = T                 # should independents be plotted?
 
 # set plotting parameters
 param.plot.res = 300      # plot resolution in ppi
@@ -31,23 +34,39 @@ old <- theme_set(theme_gray())
 theme_update(axis.title = element_text(size = rel(0.65)))
 theme_update(axis.text = element_text(size = rel(0.5)))
 
+param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
+
 # file paths
 # to set up the script in a different environment, set the root parameter
-param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
-param.plot.out =  paste(param.path.root, "analysis/", param.dataset, "/variation/", sep = "")
-param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all.csv", sep = "")
-param.independents.out = paste(param.path.root, "data/models/", param.dataset, "/", sep = "")
-
-# thresholds for defining group membership
-param.threshold.code_issue_sd = 0
-param.threshold.code_review_contribution_sd = 0
-param.threshold.issue_reports_discussion_sd = 0
-param.threshold.technical_discussion_sd = 0 
-param.threshold.persistency_sd = 0
-param.threshold.extent_sd = 0
-param.threshold.proximity_prestige_sd = 0
-param.threshold.experience_sd = 0
-
+if (param.sd.median){
+  param.plot.out =  paste(param.path.root, "analysis/", param.dataset, "/variation_median/", sep = "")
+  param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all_median.csv", sep = "")
+  param.independents.out = paste(param.path.root, "data/models_median/", param.dataset, "/", sep = "")
+  
+  # thresholds for defining group membership
+  param.threshold.code_issue_sd = 0.5
+  param.threshold.code_review_contribution_sd = 0.5
+  param.threshold.issue_reports_discussion_sd = 0.5
+  param.threshold.technical_discussion_sd = 0.5 
+  param.threshold.persistency_sd = 0.5
+  param.threshold.extent_sd = 0.5
+  param.threshold.proximity_prestige_sd = 0.5
+  param.threshold.experience_sd = 0.5
+} else {
+  param.plot.out =  paste(param.path.root, "analysis/", param.dataset, "/variation/", sep = "")
+  param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all_mean.csv", sep = "")
+  param.independents.out = paste(param.path.root, "data/models/", param.dataset, "/", sep = "")
+  
+  # thresholds for defining group membership
+  param.threshold.code_issue_sd = 0
+  param.threshold.code_review_contribution_sd = 0
+  param.threshold.issue_reports_discussion_sd = 0
+  param.threshold.technical_discussion_sd = 0
+  param.threshold.persistency_sd = 0
+  param.threshold.extent_sd = 0
+  param.threshold.proximity_prestige_sd = 0
+  param.threshold.experience_sd = 0
+}
 
 #### import ####
 #'import ops file and convert to numeric/factor
@@ -56,19 +75,6 @@ coerce_new <- function(){
   
   return(ops)
 }
-
-#' calculates column variances for the provided data frame
-#' removes NAs before calculating variances
-#' @param df:  data frame containing numeric vectors
-#' @return data.frame containing variances for each column
-calc.col_var <- function(df) {
-  res = list()
-  for (i in colnames(df)) {
-    res[[i]] = var(df[[i]], na.rm = TRUE)
-  }
-  return(res)
-}
-
 
 #### plots ####
 #' saves the supplied ggplot under the specified name
@@ -797,7 +803,7 @@ if(param.plot.ops) {
   
   projects.boxplot.all(ops)
   
-  if (F) {
+  if (T) {
     # ops.boxplot.a_focus.simple(ops)
     # ops.boxplot.a_focus.sd(ops)
     ops.boxplot.sd(ops)
@@ -830,7 +836,7 @@ if(param.independents.generate){
   
   
   if(param.plot.ind){
-    ind.pairs(independents)
+    # ind.pairs(independents)
     ind.boxplot(independents)
   }
 }

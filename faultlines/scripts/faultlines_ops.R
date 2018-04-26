@@ -53,7 +53,10 @@ param.analysis.filter.rule = "both"
 
 # number of contributions. defines how many contributions must be made in total 
 # such that a developer belongs to the dev_core
-param.analysis.dev_core.min = 50/180
+param.analysis.dev_core.min = 20/180
+
+# define if measures should be mean centered (F) or median centered (T)
+param.sd.median = F
 
 #### queries ####
 
@@ -628,14 +631,13 @@ ops.calculate.network_measures <- function(graph_d){
   I = apply(I, 2, sum)
   
   proximity_prestige = ((I/(vcount(graph_d)-1))/(apply(dist, 2, sum)/I))
-  proximity_prestige_sd = (proximity_prestige - mean(proximity_prestige, na.rm = T))/sd(proximity_prestige, na.rm = T)
-  
+
   return(data.frame(gha_id = V(graph_d)$name,
                     degree_centrality = degree_centrality,
                     betweenness_centrality = betweenness_centrality,
                     closeness_centrality = closeness_centrality,
                     degree_prestige = degree_prestige,
-                    proximity_prestige = proximity_prestige_sd))
+                    proximity_prestige = proximity_prestige))
 }
 
 
@@ -677,7 +679,14 @@ standardize_measures<- function(df){
   
   for(i in 1:length(variables)){
       new_name = paste(variables[i], "sd", sep = "_")
-      df[, new_name] = (df[, variables[i]] - mean(df[, variables[i]], na.rm = T))/sd(df[, variables[i]], na.rm = T)
+      if(param.sd.median){
+        df[, new_name] = (df[, variables[i]] - median(df[, variables[i]], na.rm = T))/sd(df[, variables[i]], na.rm = T)  
+      } else{
+        df[, new_name] = (df[, variables[i]] - mean(df[, variables[i]], na.rm = T))/sd(df[, variables[i]], na.rm = T)  
+      }
+      
+      
+      
   }
   
   return(df)
@@ -771,7 +780,7 @@ main <- function () {
     },
     
     error = function(err){
-      print("err")
+      print(err)
       print(p)
       ops = NULL
       return(ops)
@@ -792,7 +801,15 @@ main <- function () {
   
   if(!param.export.separate){
     ops = rbindlist(result)
-    write.csv(ops, file = "/home/rahnm/R/analysis/faultlines/variation/ops_all.csv")
+    
+    fp = "/home/rahnm/R/analysis/faultlines/variation/"
+    if (param.sd.median){
+      fn = paste(fp, "ops_all_median.csv", sep = "")
+    } else {
+      fn = paste(fp, "ops_all_mean.csv", sep = "")
+    }
+    
+    write.csv(ops, file = fn)
   }
 }
 
