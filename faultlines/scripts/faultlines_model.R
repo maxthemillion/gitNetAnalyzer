@@ -7,10 +7,11 @@ library(stargazer)
 library(plyr)
 library(pscl)
 library(modEvA)
+library(gridExtra)
 
 #### parameters ####
 param.dataset = "sp180_c20" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
-param.sd.median = F
+param.sd.median = T
 
 param.plot.facets = F
 param.plot.correlation = T
@@ -930,7 +931,7 @@ estimate.ci.standard <- function(){
 
 
 #### Blau Index models ####
-estimate.releases.blau <- function(){
+estimate.blau <- function(){
   
   m.releases.nbr.controls <- glm.nb(releases ~ releases_control_cat +
                                       proj_age +
@@ -944,7 +945,6 @@ estimate.releases.blau <- function(){
     issue_focus_blau +
     techcontrib_focus_blau +
     code_comment_focus_blau +
-    issue_comment_focus_blau +
     rel_persistent_blau + 
     rel_extensive_blau 
   
@@ -961,16 +961,7 @@ estimate.releases.blau <- function(){
   #'
   form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
   m.releases.nbr.blau.4 <- glm.nb(form, data = oss.releases, control = param.glm.control)
-  
-  #' Negative Binomial GLM
-  #' controls:
-  #' - releases control
-  #' - project size 
-  #'
-  #'
-  form = formula.drop.variable(form.s, "issue_comment_focus_blau")
-  form = formula.add.variable(form, c("releases_control_cat", "proj_age", "proj_size"))
-  m.releases.nbr.blau.6 <- glm.nb(form, data = oss.releases, control = param.glm.control)
+
   
   
   #' ZINBR 1
@@ -990,7 +981,6 @@ estimate.releases.blau <- function(){
                                       dist = "negbin",
                                       control = zeroinfl.control(method ="BFGS", maxit = 10000, trace = F))
   
-  
   #' ZINBR 4
   #' controlling for project size and previous releases
   #'
@@ -1008,67 +998,47 @@ estimate.releases.blau <- function(){
                                       ,
                                       data = oss.releases,
                                       dist = "negbin")
-  
-  out <- list()
-  out [[1]] <- m.releases.nbr.blau.1
-  out [[2]] <- m.releases.nbr.blau.4
-  out [[3]] <- m.releases.nbr.blau.6
-  out [[4]] <- m.releases.nbr.controls
-  out [[5]] <- m.releases.zinbr.blau.1
-  out [[6]] <- m.releases.zinbr.blau.4
-  
-  m.to.table(out, 
-             title = "Release models - (Blau indicators)", 
-             m_name = "nbr_releases_blau",
-             label = "tab:res_releases_blau"
-  ) 
-}
-estimate.noncore.blau <- function(){
-  m.noncore.nbr.controls <- glm.nb(no_non_core ~ releases_control +
+
+  m.noncore.nbr.controls <- glm.nb(no_non_core ~ 
+                                     releases_control_cat +
                                      proj_age +
                                      proj_size, 
                                    data = oss.noncore, 
                                    control = param.glm.control)
   
   form.s = no_non_core ~
-    rel_persistent_blau + 
-    rel_extensive_blau + 
-    issue_focus_blau +
-    code_comment_focus_blau +
-    issue_comment_focus_blau +
-    techcontrib_focus_blau +
     rel_high_reputation +
-    rel_experienced_blau
+    rel_experienced_blau +
+    issue_focus_blau +
+    techcontrib_focus_blau +
+    code_comment_focus_blau +
+    rel_persistent_blau + 
+    rel_extensive_blau 
   
   m.noncore.nbr.blau.1 <- glm.nb(form.s, data = oss.noncore, control = param.glm.control)
   
   form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
   m.noncore.nbr.blau.2 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
   
+  out <- list()
+  out [[1]] <- m.releases.nbr.blau.1
+  out [[2]] <- m.releases.nbr.blau.4
   
-  form = formula.add.variable(form.s, c("releases_control_cat", "proj_age", "proj_size"))
-  form = formula.drop.variable(form, "issue_comment_focus_blau")
-  m.noncore.nbr.blau.3 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
-  
-    out <- list()
-    out [[1]] <- m.noncore.nbr.blau.1
-    out [[2]] <- m.noncore.nbr.blau.2
-    out [[3]] <- m.noncore.nbr.blau.3
-    out [[4]] <- m.noncore.nbr.controls
-    
-    m.to.table(out, 
-               title = "Noncore models (negbin) - (Blau indicators)", 
-               m_name = "nbr_noncore_blau",
-               label = "tab:res_noncore_blau"
-    ) 
-  
+  out [[3]] <- m.noncore.nbr.blau.1
+  out [[4]] <- m.noncore.nbr.blau.2
+
+  m.to.table(out, 
+             title = "NBR using blau scores for variety diversity faultlines", 
+             m_name = "nbr_blau",
+             label = "tab:res_blau"
+  ) 
 }
 
 #### main ####
 main <- function(){
   # clear environment
   message("clearing global environment...")
-  rm(list = ls())
+  rm(list = ls(envir = .GlobalEnv))
   
   oss.all <<- import.variables()
   oss.releases <<- outliers.remove.releases(oss.all)
@@ -1128,8 +1098,7 @@ main <- function(){
   estimate.noncore.nbr.standard()
   estimate.ci.standard()
   
-  estimate.releases.blau()
-  estimate.noncore.blau()
+  estimate.blau()
   }
 
 

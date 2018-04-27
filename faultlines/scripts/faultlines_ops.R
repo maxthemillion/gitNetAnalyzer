@@ -56,7 +56,7 @@ param.analysis.filter.rule = "both"
 param.analysis.dev_core.min = 20/180
 
 # define if measures should be mean centered (F) or median centered (T)
-param.sd.median = F
+param.sd.median = T
 
 #### queries ####
 
