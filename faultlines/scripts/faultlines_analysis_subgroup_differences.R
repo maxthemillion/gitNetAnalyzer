@@ -9,7 +9,7 @@ library(metap)
 #### parameters ####
 param.analysis.groups.minsize = 2             # min group size which qualifies for further analysis
 
-param.dataset = "sp180_c10" # can be "sp180_c10", "sp180_c20", "sp180_c50" or "sp90_c20" 
+param.dataset = "sp180_c20" # can be "sp180_c10", "sp180_c20", "sp180_c50" or "sp90_c20" 
 
 param.plot.res = 300
 param.plot.width = 12
@@ -78,26 +78,29 @@ save.plot <- function(plot, name){
 subgroup.test <- function(sg){
   out <- tryCatch(
     {
-      r = data.frame(p_persistency_sd = kruskal.test(sg$persistency_sd ~ sg$group)$p.value,
-                     p_extent_sd = kruskal.test(sg$contribution_extent_sd ~ sg$group)$p.value,
-                     p_proj_experience_sd = kruskal.test(sg$proj_experience_sd ~ sg$group)$p.value,
-                     p_proximity_prestige_sd = kruskal.test(sg$proximity_prestige_sd ~ sg$group)$p.value,
-                     p_ratio_issue_reports_discussion_sd = kruskal.test(sg$ratio_issue_reports_discussion_sd ~ sg$group)$p.value,
-                     p_ratio_code_issue_sd = kruskal.test(sg$ratio_code_issue_sd ~ sg$group)$p.value,
-                     p_ratio_code_review_contribution_sd = kruskal.test(sg$ratio_code_review_contribution_sd ~ sg$group)$p.value,
-                     p_ratio_technical_discussion_sd = kruskal.test(sg$ratio_technical_discussion_sd ~ sg$group)$p.value
+      r = data.frame(                     
+        reputation = kruskal.test(sg$proximity_prestige_sd ~ sg$group)$p.value,
+        experience = kruskal.test(sg$proj_experience_sd ~ sg$group)$p.value,
+        issue_focus = kruskal.test(sg$ratio_code_issue_sd ~ sg$group)$p.value,
+        technical_focus = kruskal.test(sg$ratio_technical_discussion_sd ~ sg$group)$p.value,
+        code_review_focus = kruskal.test(sg$ratio_code_review_contribution_sd ~ sg$group)$p.value,
+        issue_report_focus = kruskal.test(sg$ratio_issue_reports_discussion_sd ~ sg$group)$p.value,
+        persistence = kruskal.test(sg$persistency_sd ~ sg$group)$p.value,
+        extent = kruskal.test(sg$contribution_extent_sd ~ sg$group)$p.value
       ) 
     },
     error=function(cond) {
 #      message(cond)
-      r <- data.frame(p_persistency_sd = NA,
-                      p_extent_sd = NA,
-                      p_proj_experience_sd = NA,
-                      p_proximity_prestige_sd = NA,
-                      p_ratio_issue_reports_discussion_sd = NA,
-                      p_ratio_code_issue_sd = NA,
-                      p_ratio_code_review_contribution_sd = NA,
-                      p_ratio_technical_discussion_sd = NA)
+      r <- data.frame(
+        reputation = NA,
+        experience = NA,
+        issue_focus = NA,
+        technical_focus = NA,
+        code_review_focus = NA,
+        issue_report_focus = NA,
+        persistence = NA,
+        extent = NA
+      )
       return(r)
     }
   )    
@@ -141,7 +144,7 @@ main <- function(){
   #' - H0: all the underlying H0-hypotheses are true
   #' - H1: at least one of the underlying H1-hypotheses are true
   #'
-  sum.res <- adply(test.res[!is.na(test.res$p_persistency_sd),-1], 
+  sum.res <- adply(test.res[!is.na(test.res$persistence),-1], 
                    2, 
                    function(x) fishers.method(x),
                    .id = NULL)
@@ -150,17 +153,32 @@ main <- function(){
                        2, 
                        function(x) kruskal.shares(x), 
                        .id = NULL)
+  notes = c(paste("Number of projects tested: ", 
+                  nrow(test.res[!is.na(test.res$p_proximity_prestige_sd),]), sep  =""))
+  label = paste("tab:subgroup_diff_res", param.dataset, sep ="_")
   
+  if(param.dataset == "sp180_c20"){
+    thresh = 20
+  } else if (param.dataset == "sp180_c10"){
+    thresh  = 10
+  } else {
+    thresh = 50
+  }
+  
+  title = "Aggregated results of KW tests for subgroup differences"
   stargazer(merge(sum.res, test.shares, by = "variable"), 
             type = "text",
-            title = "Aggregated results of Kruskal-Wallis test for subgroup differences",
+            title = title,
             add.lines = c(paste("Number of significant tests per variable (p = .05, g_min = ", 
                           param.analysis.groups.minsize,
                           ")"), 
                           sep = ""),
-            out = paste(param.table.out, "subgroup_differences_res.txt", sep = ""), 
+            out = paste(param.table.out, "subgroup_differences_res.tex", sep = ""), 
             summary = F,
-            initial.zero = F)
+            initial.zero = F,
+            notes.append = T,
+            notes = notes,
+            label = label)
 }
 
 main()

@@ -56,7 +56,7 @@ param.analysis.filter.rule = "both"
 param.analysis.dev_core.min = 20/180
 
 # define if measures should be mean centered (F) or median centered (T)
-param.sd.median = T
+param.sd.median = F
 
 #### queries ####
 
@@ -272,7 +272,7 @@ get_count_comment_types <- function(p, dt_start, dt_end) {
     df = cypher(neo, query)
   },
   error = function(err){
-    print(err)
+    # print(err)
     df = data.frame(issue_comments = c(0), pullreq_comments = c(0), commit_comments = c(0))
     return(df)
   })
@@ -571,7 +571,6 @@ ops.calculate.ratios <- function(p, dt_start, dt_end, dev_core) {
   # ratio: relative activity focus
   # share of issue related activity in total activity per user in relation to the overall project
   # ratio of issue to total activity.
-
   
   # iii.
   # ratio: code contributing vs code reviewing
@@ -631,6 +630,16 @@ ops.calculate.network_measures <- function(graph_d){
   I = apply(I, 2, sum)
   
   proximity_prestige = ((I/(vcount(graph_d)-1))/(apply(dist, 2, sum)/I))
+  
+  if(is.nan(proximity_prestige) || 
+     is.na(proximity_prestige) ||
+     is.infinite(proximity_prestige)){
+    print(paste("project:", V(graph_d)$name))
+    print(proximity_prestige)
+    print(paste("I:", I))
+    print(paste("vcount-1": vcount(graph_d)-1))
+    print(paste("dist:", apply(dist, 2, sum)))
+  }
 
   return(data.frame(gha_id = V(graph_d)$name,
                     degree_centrality = degree_centrality,
@@ -684,11 +693,7 @@ standardize_measures<- function(df){
       } else{
         df[, new_name] = (df[, variables[i]] - mean(df[, variables[i]], na.rm = T))/sd(df[, variables[i]], na.rm = T)  
       }
-      
-      
-      
   }
-  
   return(df)
 }
 
@@ -813,5 +818,6 @@ main <- function () {
   }
 }
 
-# ftry(main())
 main()
+
+

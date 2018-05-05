@@ -11,11 +11,18 @@ library(gridExtra)
 
 #### parameters ####
 param.dataset = "sp180_c20" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
-param.sd.median = T
+param.sd.median = F
+
+# determine which models should be estimated when running the file
+param.estimate.standard = F
+param.estimate.ci = T
+param.estimate.blau = F
+param.estimate.sensitivity = F
+param.estimate.moderation = F
 
 param.plot.facets = F
-param.plot.correlation = T
-param.plot.hist = T
+param.plot.correlation = F
+param.plot.hist = F
 param.glm.control = glm.control(epsilon = 1e-8, maxit = 100, trace = FALSE)
 
 param.m.transform.blau = T  # no significant effects when untransformed
@@ -44,6 +51,7 @@ param.plot.units = "cm"
 old <- theme_set(theme_gray())
 theme_update(axis.title = element_text(size = rel(0.65)))
 theme_update(axis.text = element_text(size = rel(0.5)))
+theme_update(plot.title = element_text(hjust=0))
 
 #### import ####
 
@@ -58,13 +66,14 @@ import.variables <- function(){
   # read dependent variables
   dependents <- read.csv(paste(param.m.in, "success.csv", sep = ""))
   
-  ci <- read.csv(paste(param.path.root, "data/models/travis.csv", sep =""))[, c("project", "has_travis")]
+  ci <- read.csv(paste(param.path.root, "data/models/uses_travis.csv", sep =""))[, c("project", "uses_travis")]
   
   # merge
   oss = merge(x = independents, y = dependents, by = "project")
-  oss = merge(x = oss, y=ci, by = "project")
+  oss = merge(x = oss, y=ci, by = "project", all.x = T)
+  oss$uses_travis[is.na(oss$uses_travis)] <- FALSE  
   
-  oss$has_travis = as.factor(oss$has_travis)
+  oss$travis = as.factor(oss$uses_travis)
   
   if(param.m.transform.blau){
     oss = transform.blau(oss)
@@ -135,26 +144,32 @@ hist.dep <- function(df){
   png(
     filename = paste(param.plot.out, "dist_dependents.png", sep = ""),
     res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
+    width = 16,
+    height = 6,
     units = param.plot.units
   )
   
   p1 <- ggplot(dfmelt, aes(x = value)) +
     geom_histogram() +
+    ylab("Frequency") +
+    xlab("Count") +
     facet_wrap(~variable, scales = "free") +
     labs(subtitle = "no transformation")
-  
-  # save.plot(p, "histogram_dependents.png")
   
   dfmelt <-melt(log(df[,c("releases", "no_non_core")] + 1))
   
   p2 <- ggplot(dfmelt, aes(x = value)) +
     geom_histogram() +
+    ylab("Frequency") +
+    xlab("Count (log-transformed)") +
     facet_wrap(~variable, scales = "free") +
     labs(subtitle = "log-transformed")
   
-  grid.arrange(p1, p2, top = "Distribution of dependent variables", nrow = 2)
+  grid.arrange(p1, 
+               p2, 
+               # top = "Distribution of dependent variables", 
+               nrow = 1, 
+               ncol = 2)
   
   dev.off()
   # save.plot(p, "histogram_dependents_log.png")
@@ -358,14 +373,21 @@ plot.facets <- function(oss){
   generate.facet.no_non_core(oss)
 }
 
+corr.tab <- function(df){
+  c_m = cor(df, use = "pairwise.complete.obs")
+  c_tab <- get_lower_tri(c_m)
+  stargazer(c_tab, 
+            type = "text", 
+            out = paste(param.table.out, "correlation.tex", sep  =""))
+  
+}
+
 #'
 #'
 #'
-c.heatmap <- function(df, title, subtitle = NULL, file.path, reorder = T){
+corr.heatmap <- function(df, title, subtitle = NULL, file.path, reorder = T){
   
   c_m = cor(df, use = "pairwise.complete.obs")
-  # stargazer(c, type = "text", out = paste(param.plot.exp, "models/correlation_1_as_is.txt", sep  =""))
-  
   # plot a heatmap 
   if(reorder){c_m <- reorder_cormat(c_m)}
   c_m <- get_lower_tri(c_m)
@@ -375,9 +397,11 @@ c.heatmap <- function(df, title, subtitle = NULL, file.path, reorder = T){
   p <- ggplot(c_m, aes(Var1, Var2, fill = value)) +
     geom_tile() +
     geom_text(aes(Var1, Var2, label = value), color = "black", size = 2) +
-    labs(title = title, subtitle = subtitle) +
-    ylab("") +
-    xlab("") +
+#   labs(title = title, subtitle = subtitle) +
+    theme(axis.title.x=element_blank(), 
+          axis.title.y=element_blank()) +
+    ylim(rev(levels(c_m$Var2))) +
+    # xlim(rev(levels(c_m$Var1))) +
     scale_fill_gradient2(low = "dodgerblue4", 
                          high = "gray35", 
                          mid = "white",
@@ -393,14 +417,14 @@ c.heatmap <- function(df, title, subtitle = NULL, file.path, reorder = T){
           legend.position = c(1, 0.7),
           legend.direction = "horizontal") +
     coord_fixed() 
-  save.plot(p, file.path)
+  save.plot(p, file.path, width = 10, height = 10)
 }
 
 #'
 #'
 #'
 get_lower_tri <- function(c){
-  c[upper.tri(c)] <- NA
+  c[lower.tri(c)] <- NA
   return(c)
 }
 
@@ -535,12 +559,12 @@ outliers.remove.noncore <- function(oss){
 #' saves the supplied ggplot under the specified name
 #' @param plot  ggplot2 object
 #' @param name  filename to save the plot to
-save.plot <- function(plot, name){
+save.plot <- function(plot, name, width = param.plot.width, height = param.plot.height){
   png(
     filename = paste(param.plot.out, name, sep = ""),
     res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
+    width = width,
+    height = height,
     units = param.plot.units
   )
   
@@ -552,11 +576,11 @@ save.plot <- function(plot, name){
 #'
 #'
 #'
-m.to.table <- function(m_list, title, m_name, label, float.env = "table", ns = NULL){
+m.to.table <- function(m_list, title, m_name, label, float.env = "table", ns = T){
   
   p_d = c("pearson disp.")
-  pR2_McFadden = c("McFadden")
-  pR2_Nagelkerke = c("Nagelkerke")
+  pR2_McFadden = c("pseudo R2 (McFadden)")
+  pR2_Nagelkerke = c("pseudo R2 (Nagelkerke)")
   for(i in 1:length((m_list))){
     
     if("glm" %in% class(m_list[[i]])){
@@ -574,18 +598,27 @@ m.to.table <- function(m_list, title, m_name, label, float.env = "table", ns = N
     p_d[[i + 1]] = pearson.dispersion(m_list[[i]])
   }
   
+  if(param.sd.median){
+    m_name = paste(m_name, "_median", sep = "")
+    label = paste(label, "_median", sep = "")
+    title = paste(title, "(Median centered)")
+  }
+  
   stargazer(m_list, 
             type = param.table.format, 
             title = title,
             add.lines = list(p_d, pR2_McFadden, pR2_Nagelkerke),
             out = paste(param.table.out, m_name, param.table.file, sep = ""),
-            no.space = F,
+            no.space = ns,
             notes.align = "l",
             single.row = F,
             report = "vc*",
             label = label,
             float = T,
-            float.env = float.env            
+            float.env = float.env,
+            initial.zero = F, 
+            align = T,
+            decimal.mark = "."
             )
 }
 
@@ -605,8 +638,8 @@ report.dispersion <- function(d){
   calc <- function(x) {
     
     return(data.frame(variable = names(x),
-                      var = round(var(x[[1]]), digits = 1),
-                      mean = round(mean(x[[1]]), digits = 1)
+                      var = var(x[[1]]),
+                      mean = mean(x[[1]])
     ))
   }
   
@@ -614,14 +647,15 @@ report.dispersion <- function(d){
   
   stargazer(report, 
             type = param.table.format, 
-            title = "Dependent variables summary statistics",
-            out = paste(param.table.out, "dependents_summary_stats.txt", sep = ""),
-            summary = F)
+            title = "Dependent variables - summary statistics on overdispersion",
+            out = paste(param.table.out, "dependents_summary_stats.tex", sep = ""),
+            summary = F,
+            label = "tab:dependents_overdispersion",
+            digits = 2)
 }
 
-
 #### release models standard ####
-estimate.releases.nbr.standard <- function(){
+estimate.releases.nbr.standard <- function(add_to_name = "", add_to_title =""){
   
   m.releases.nbr.controls <- glm.nb(releases ~ releases_control_cat +
                                       proj_age +
@@ -687,9 +721,9 @@ estimate.releases.nbr.standard <- function(){
   out [[6]] <- m.releases.nbr.controls
   
   m.to.table(out, 
-             title = "Release models (standard indicators, glm family: negbin)",
-             m_name = "nbr_releases_simple",
-             label = "tab:res_nbr_release_simple",
+             title = paste("Release models - NBR", add_to_title, sep = ""),
+             m_name = paste("nbr_releases_simple", add_to_name, sep = ""),
+             label = paste("tab:res_nbr_release_simple", add_to_name, sep = ""),
              float.env = "sidewaystable",
              ns = T)
   
@@ -702,7 +736,7 @@ estimate.releases.nbr.standard <- function(){
   return(m.releases.nbr.s.6)
 }
 
-estimate.releases.zinbr.standard <- function(nbr){
+estimate.releases.zinbr.standard <- function(nbr, add_to_title = "", add_to_name = ""){
 
   m.releases.zinbr.controls <- zeroinfl(releases ~ releases_control_cat + proj_age + proj_size | releases_control_cat,
                                         data = oss.releases,
@@ -768,18 +802,18 @@ estimate.releases.zinbr.standard <- function(nbr){
   out [[4]] <- m.releases.zinbr.controls
   
   m.to.table(out, 
-             title = "Zero inflated release models (standard indicators, glm family: zi-negbin)", 
-             m_name = "zinbr_releases_simple",
-             label = "tab:res_zinbr_release_simple"
+             title = paste("Release models - ZINBR", add_to_title, sep = ""), 
+             m_name = paste("zinbr_releases_simple", add_to_name, sep = ""),
+             label = paste("tab:res_zinbr_release_simple", add_to_name, sep ="")
   ) 
   
-  message("vuong test")
-  print(vuong(nbr, m.releases.zinbr.standard.6))
+  #message("vuong test")
+  #print(vuong(nbr, m.releases.zinbr.standard.6))
   
 }
 
 #### non-core models standard ####
-estimate.noncore.nbr.standard <- function(){
+estimate.noncore.nbr.standard <- function(add_to_name = "", add_to_title = ""){
   
   m.noncore.nbr.controls <- glm.nb(no_non_core ~ releases_control_cat +
                                      proj_age +
@@ -844,9 +878,9 @@ estimate.noncore.nbr.standard <- function(){
   out [[6]] <- m.noncore.nbr.controls
   
   m.to.table(out, 
-             title = "Noncore models (standard indicators, glm family: negbin)",
-             m_name = "nbr_nocore_simple",
-             label = "tab:res_noncore_simple",
+             title = paste("Noncore models - NBR", add_to_title, sep = ""),
+             m_name = paste("nbr_noncore_simple", add_to_name, sep = ""),
+             label = paste("tab:res_noncore_simple", add_to_name, sep = ""),
              float.env = "sidewaystable") 
   
   message("VIF model 4")
@@ -854,7 +888,7 @@ estimate.noncore.nbr.standard <- function(){
   }
 
 #### ci models ####
-estimate.ci.standard <- function(){
+estimate.ci <- function(){
   form.s = releases ~
     rel_persistent + 
     rel_extensive + 
@@ -863,7 +897,7 @@ estimate.ci.standard <- function(){
     techcontrib_focus +
     rel_high_reputation +
     rel_experienced +
-    has_travis
+    travis
   
   
   #' Negative Binomial GLM
@@ -890,7 +924,7 @@ estimate.ci.standard <- function(){
                                             issue_comment_focus +
                                             rel_persistent + 
                                             rel_extensive +
-                                            has_travis +
+                                            travis +
                                             releases_control_cat +
                                             proj_age +
                                             proj_size | releases_control_cat
@@ -912,7 +946,7 @@ estimate.ci.standard <- function(){
     techcontrib_focus +
     rel_high_reputation +
     rel_experienced +
-    has_travis
+    travis
   form = formula.add.variable(form.s, c("releases_control_cat", "proj_size", "proj_age"))
   m.noncore.ci.nbr.standard.4 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
   
@@ -923,12 +957,11 @@ estimate.ci.standard <- function(){
   out [[4]] <- m.noncore.ci.nbr.standard.4
 
   m.to.table(out, 
-             title = "Controlling for CI (Standard indicators)", 
+             title = "Controlling for CI", 
              m_name = "ci_standard",
              label = "tab:res_ci_models"
   ) 
 }
-
 
 #### Blau Index models ####
 estimate.blau <- function(){
@@ -1023,22 +1056,137 @@ estimate.blau <- function(){
   out <- list()
   out [[1]] <- m.releases.nbr.blau.1
   out [[2]] <- m.releases.nbr.blau.4
+  out [[3]] <- m.releases.zinbr.blau.4
   
-  out [[3]] <- m.noncore.nbr.blau.1
-  out [[4]] <- m.noncore.nbr.blau.2
+  out [[4]] <- m.noncore.nbr.blau.1
+  out [[5]] <- m.noncore.nbr.blau.2
 
   m.to.table(out, 
              title = "NBR using blau scores for variety diversity faultlines", 
              m_name = "nbr_blau",
-             label = "tab:res_blau"
-  ) 
+             label = "tab:res_blau",
+             float.env = "sidewaystable"
+  )
+  
+  message("VIF Model 2:")
+  print(vif(m.releases.nbr.blau.4))
+  message("VIF Model 4:")
+  print(vif(m.noncore.nbr.blau.2))
 }
+
+
+#### Moderation ####
+estimate.moderation.releases <- function(){
+  # select
+  oss.releases.old <- oss.releases
+  oss.releases <<- oss.releases.old[oss.releases.old$travis == TRUE,]
+  
+  # estimate
+  estimate.releases.zinbr.standard(add_to_name = "_moderation_travis_T", 
+                                   add_to_title = " - moderation (Travis TRUE)")
+  
+  # select
+  oss.releases <<- oss.releases.old[oss.releases.old$travis == FALSE,]
+  
+  # estimate
+  estimate.releases.zinbr.standard(add_to_name = "_moderation_travis_F", 
+                                   add_to_title = " - moderation (Travis FALSE)")
+  
+  # reset
+  oss.releases <<- oss.releases.old
+  
+  oss.noncore.old <- oss.noncore
+  oss.noncore <<- oss.noncore.old[oss.noncore.old$travis == TRUE,]
+  estimate.noncore.nbr.standard(add_to_name = "_moderation_travis_T", 
+                                add_to_title = " moderation (Travis TRUE)")
+  
+  oss.noncore <<- oss.noncore.old[oss.noncore.old$travis == FALSE,]
+  estimate.noncore.nbr.standard(add_to_name = "_moderation_travis_F", 
+                                add_to_title = " moderation (Travis FALSE)")
+  
+  #reset
+  oss.noncore <<- oss.noncore.old
+}
+
+
+#### sensitivity check ####
+estimate.threshold.sensitivity <- function(){
+  import.dir = paste(param.path.root, "data/models_median/", param.dataset, "/sensitivity/", sep = "")
+  d.list = list.files(import.dir)
+  
+  l.release = list()
+  l.noncore = list()
+  
+  for(i in 1:length(d.list)){
+
+    
+    # read independent variables
+    independents <- read.csv(paste(import.dir, i, ".csv", sep = ""))
+    
+    # read dependent variables
+    dependents <- read.csv(paste(param.m.in, "success.csv", sep = ""))
+    
+
+    # merge
+    oss = merge(x = independents, y = dependents, by = "project")
+    
+    oss$releases_control_cat = as.factor(oss$releases_control > 0)
+    
+    oss.all <<- oss
+    oss.releases <<- outliers.remove.releases(oss.all)
+    oss.noncore <<- outliers.remove.noncore(oss.all)
+    
+    form = releases ~
+      rel_high_reputation +
+      rel_experienced +
+      techcontrib_focus +
+      code_comment_focus +
+      issue_comment_focus +
+      rel_persistent + 
+      rel_extensive +
+      releases_control_cat +
+      proj_age +
+      proj_size
+    
+    l.release[[i]] <- glm.nb(form, data = oss.releases, control = param.glm.control)
+    
+    form = no_non_core ~
+      rel_high_reputation +
+      rel_experienced +
+      techcontrib_focus +
+      code_comment_focus +
+      issue_comment_focus +
+      rel_persistent + 
+      rel_extensive +
+      releases_control_cat +
+      proj_age +
+      proj_size
+    
+    l.noncore[[i]] <- glm.nb(form, data = oss.noncore, control = param.glm.control)
+    
+  }
+  
+  m.to.table(l.release, 
+             title = "Sensitivity analysis - release models ",
+             m_name = "nbr_releases_sensitivity",
+             label = "tab:res_nbr_releases_sensitivity",
+             float.env = "sidewaystable",
+             ns = T)
+  
+  
+  m.to.table(l.noncore, 
+             title = "Sensitivity analysis - noncore models ",
+             m_name = "nbr_noncore_sensitivity",
+             label = "tab:res_nbr_noncore_sensitivity",
+             float.env = "sidewaystable",
+             ns = T)
+  
+}
+
+
 
 #### main ####
 main <- function(){
-  # clear environment
-  message("clearing global environment...")
-  rm(list = ls(envir = .GlobalEnv))
   
   oss.all <<- import.variables()
   oss.releases <<- outliers.remove.releases(oss.all)
@@ -1056,33 +1204,46 @@ main <- function(){
   }
   
   if(param.plot.correlation){
-    # create correlation matrices
-    # c.heatmap(independents[, -1], 
-    c.heatmap(subset(independents, select = -c(project, 
-                                               issue_comment_focus_blau, 
-                                               issue_focus_blau, 
-                                               rel_experienced_blau,
-                                               rel_persistent_blau,
-                                               code_comment_focus_blau,
-                                               techcontrib_focus_blau,
-                                               modularity,
-                                               no_subgroups,
-                                               rel_extensive_blau
-    )),
-    title = "Pearson correlation",
-    subtitle = "independent variables",
-    file.path = "cor_independents.png")
     
-    c.heatmap(independents[, c("issue_focus_blau", 
-                               "issue_comment_focus_blau", 
-                               "code_comment_focus_blau", 
-                               "techcontrib_focus_blau")], 
-              title = "Pearson correlation",
-              subtitle = "subgroup shares",
-              file.path = "cor_subgroup_shares.png",
+    var.cor <- subset(independents, select = c(
+      rel_high_reputation,
+      rel_experienced,
+      issue_focus,
+      techcontrib_focus,
+      code_comment_focus,
+      issue_comment_focus,
+      rel_persistent,
+      rel_extensive,
+      proj_age,
+      proj_size))
+    
+    corr.tab(var.cor)
+    
+    corr.heatmap(var.cor, 
+              title = "Pearson correlation of independent variables",
+              file.path = "cor_independents_standard.png",
               reorder = F)
     
-    c.heatmap(dependents[, -1],
+    var.cor <- subset(independents, select = c(
+      rel_high_reputation,
+      rel_experienced_blau,
+      issue_focus_blau,
+      techcontrib_focus_blau,
+      code_comment_focus_blau,
+      issue_comment_focus_blau,
+      rel_persistent_blau,
+      rel_extensive_blau,
+      proj_age,
+      proj_size))
+    
+    corr.heatmap(var.cor,
+    title = "Pearson correlation of independent variables",
+    subtitle = "Blau transformed",
+    file.path = "cor_independents_blau.png",
+    reorder = F)
+    
+        
+    corr.heatmap(dependents[, -1],
               title = "Pearson correlation",
               subtitle = "dependent variables",
               file.path = "cor_dependents.png")
@@ -1092,14 +1253,31 @@ main <- function(){
     plot.facets(oss)
   }
   
-  nbr <- estimate.releases.nbr.standard()
-  estimate.releases.zinbr.standard(nbr)
-  
-  estimate.noncore.nbr.standard()
-  estimate.ci.standard()
-  
-  estimate.blau()
+  if(param.estimate.standard){
+    nbr <- estimate.releases.nbr.standard()
+    estimate.releases.zinbr.standard(nbr)
+    estimate.noncore.nbr.standard()
   }
-
+  
+  if(param.estimate.ci){
+    estimate.ci()
+  }
+  
+  if(param.estimate.blau){
+    estimate.blau()
+  }
+  
+  if(param.estimate.sensitivity){
+    estimate.threshold.sensitivity()
+  }
+  
+  if(param.estimate.moderation){
+    estimate.moderation.releases()
+  }
+  
+  # clear environment
+  message("clearing global environment...")
+  rm(envir = .GlobalEnv, list = ls(envir = .GlobalEnv))
+}
 
 main()

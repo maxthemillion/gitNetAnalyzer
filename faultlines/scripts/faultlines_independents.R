@@ -16,16 +16,17 @@ library(plyr)
 param.dataset = "sp180_c20" 
 
 # use median centering to calculate shares
-param.sd.median = T
+param.sd.median = F
 
 # which parts of the code should be executed?
-param.plot.ops = T                 # should operationalisations be plotted?
+param.plot.ops = F                 # should operationalisations be plotted?
 param.independents.generate = T    # should independents be generated?
-param.plot.ind = T                 # should independents be plotted?
+param.plot.ind = F                 # should independents be plotted?
 
+param.median.threshold = 0.5
 # set plotting parameters
 param.plot.res = 300      # plot resolution in ppi
-param.plot.width = 18     
+param.plot.width = 16    
 param.plot.height = 12
 param.plot.units = "cm"
 
@@ -42,16 +43,16 @@ if (param.sd.median){
   param.plot.out =  paste(param.path.root, "analysis/", param.dataset, "/variation_median/", sep = "")
   param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all_median.csv", sep = "")
   param.independents.out = paste(param.path.root, "data/models_median/", param.dataset, "/", sep = "")
-  
+  th = param.median.threshold
   # thresholds for defining group membership
-  param.threshold.code_issue_sd = 0.5
-  param.threshold.code_review_contribution_sd = 0.5
-  param.threshold.issue_reports_discussion_sd = 0.5
-  param.threshold.technical_discussion_sd = 0.5 
-  param.threshold.persistency_sd = 0.5
-  param.threshold.extent_sd = 0.5
-  param.threshold.proximity_prestige_sd = 0.5
-  param.threshold.experience_sd = 0.5
+  param.threshold.code_issue_sd = th
+  param.threshold.code_review_contribution_sd = th
+  param.threshold.issue_reports_discussion_sd = th
+  param.threshold.technical_discussion_sd = th
+  param.threshold.persistency_sd = th
+  param.threshold.extent_sd = th
+  param.threshold.proximity_prestige_sd = th
+  param.threshold.experience_sd = th
 } else {
   param.plot.out =  paste(param.path.root, "analysis/", param.dataset, "/variation/", sep = "")
   param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all_mean.csv", sep = "")
@@ -133,9 +134,10 @@ ops.boxplot.a_focus.simple <- function(ops) {
 ops.boxplot.a_focus.sd <- function(ops){
   
   data = ops[, c("ratio_code_issue_sd",
-                 "ratio_code_review_contribution_sd",
+                 "ratio_technical_discussion_sd",
                  "ratio_issue_reports_discussion_sd",
-                 "ratio_technical_discussion_sd")]
+                 "ratio_code_review_contribution_sd"
+                 )]
   
   vec <- melt(data)
   
@@ -166,22 +168,24 @@ ops.boxplot.a_focus.sd <- function(ops){
 #' @param ops.ratios.rel
 ops.boxplot.sd <- function(ops){
   
-  vec <- melt(ops[, c("ratio_code_issue_sd",
-                 "ratio_code_review_contribution_sd",
-                 "ratio_issue_reports_discussion_sd",
-                 "ratio_technical_discussion_sd",
-                 "contribution_extent_sd",
-                 "persistency_sd",
-                 "proximity_prestige_sd",
-                 "proj_experience_sd"
+  vec <- melt(ops[, c(
+    "proximity_prestige_sd",
+    "proj_experience_sd",
+    "ratio_code_issue_sd",
+    "ratio_technical_discussion_sd",
+    "ratio_issue_reports_discussion_sd",
+    "ratio_code_review_contribution_sd",
+    "contribution_extent_sd",
+    "persistency_sd"
   )])
   
   p <- ggplot(vec, aes( x = variable, y = value )) + 
     #geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=1, notch=FALSE) +
     geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    xlab("ratios") +
-    ylab("ratio value") +
-    labs(title = "Distribution of standardized faultline variables") +
+    theme(axis.title.x=element_blank()) +
+    ylab("deviation from the project mean\n(standard deviations)") +
+    ylim(-5, 5) +
+    # labs(title = "Distribution of standardized faultline variables") +
     theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1)) +
     scale_x_discrete(labels=c(
       "ratio_code_issue_sd" = "code v issue \n activity", 
@@ -194,64 +198,38 @@ ops.boxplot.sd <- function(ops){
       "proj_experience_sd" = "project experience"
     ))
   
-  save.plot(p, "boxplot_ops_sd.png")
+  save.plot(p, "boxplot_ops_sd.png", height = 7)
 }
 
 #' creates a boxplot for the activity level variables each
 #'
 #'
 ops.boxplot.simple <- function(ops){
+  vec <- melt(ops[, c(
+    "proximity_prestige",
+    "proj_experience",
+    "ratio_code_issue",
+    "ratio_code_review_contribution",
+    "ratio_issue_reports_discussion",
+    "ratio_technical_discussion",
+    "contribution_extent",
+    "persistency"
+  )])
   
-  png(
-    filename = paste(param.plot.out, "boxplot_standard.png", sep = ""),
-    res = param.plot.res,
-    width = param.plot.width,
-    height = param.plot.height,
-    units = param.plot.units
-  )
-  
-  vec <- melt(ops[, c("ratio_code_issue",
-                      "ratio_code_review_contribution",
-                      "ratio_issue_reports_discussion",
-                      "ratio_technical_discussion")])
-  
-  p1 <- ggplot(vec, aes( x = variable, y = value)) + 
+  p <- ggplot(vec, aes( x = variable, y = value)) + 
     geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
     xlab(" ") +
     ylab(" ") +
     theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1)) +
     scale_x_discrete(labels=c(
+      "proximity_prestige" = "reputation",
       "ratio_code_issue" = "code v issue \n activity", 
       "ratio_code_review_contribution" = "code reviewing\nv contributing",
       "ratio_issue_reports_discussion" = "issue reporting\nv discussing",
       "ratio_technical_discussion" = "tech. contributing\nv discussing"
       )) 
   
-  vec <- melt(ops[, c("contribution_extent",
-                      "persistency",
-                      "proj_experience")])
-  
-  p2 <- ggplot(vec, aes( x = variable, y = value)) + 
-    geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    xlab(" ") +
-    ylab(" ") +
-    theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1)) +
-    scale_x_discrete(labels=c(
-      "contribution_extent" = "contrib. extent",
-      "persistency" = "contrib. persistency",
-      "proj_experience" = "project experience"
-    )) 
-  
-  p3 <- ggplot(ops, aes( x = "1" , y = proximity_prestige )) + 
-    geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-    xlab(" ") +
-    ylab(" ") +
-    theme(axis.text.x = element_text(angle=45, hjust = 1, vjust = 1)) +
-    scale_x_discrete(labels=c("1" = "proximity prestige "))
-  
-  grid.arrange(p1, p2, p3, top = "Distribution of faultline operationalizations", widths = c(5, 4, 2), heights = c(1))
-  
-  dev.off()
+  save.plot(p, "boxplot_standard.png",  height = 7)
 }
 
 #' creates a boxplot for the activity level variables each
