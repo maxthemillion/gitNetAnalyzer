@@ -10,14 +10,14 @@ library(modEvA)
 library(gridExtra)
 
 #### parameters ####
-param.dataset = "sp180_c20" # can be "sp180_c10", "sp180_c20" or "sp90_c20" 
-param.sd.median = F
+param.dataset = "sp180_c20"
+param.sd.median = T
 
 # determine which models should be estimated when running the file
 param.estimate.standard = F
-param.estimate.ci = T
+param.estimate.ci = F
 param.estimate.blau = F
-param.estimate.sensitivity = F
+param.estimate.sensitivity = T
 param.estimate.moderation = F
 
 param.plot.facets = F
@@ -66,13 +66,12 @@ import.variables <- function(){
   # read dependent variables
   dependents <- read.csv(paste(param.m.in, "success.csv", sep = ""))
   
-  ci <- read.csv(paste(param.path.root, "data/models/uses_travis.csv", sep =""))[, c("project", "uses_travis")]
+  ci <- read.csv(paste(param.path.root, "data/models/travis.csv", sep =""))[, c("project", "uses_travis")]
   
   # merge
   oss = merge(x = independents, y = dependents, by = "project")
-  oss = merge(x = oss, y=ci, by = "project", all.x = T)
-  oss$uses_travis[is.na(oss$uses_travis)] <- FALSE  
-  
+  oss = merge(x = oss, y=ci, by = "project")
+
   oss$travis = as.factor(oss$uses_travis)
   
   if(param.m.transform.blau){

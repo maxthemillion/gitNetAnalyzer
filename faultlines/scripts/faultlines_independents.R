@@ -16,14 +16,14 @@ library(plyr)
 param.dataset = "sp180_c20" 
 
 # use median centering to calculate shares
-param.sd.median = F
+param.sd.median = T
 
 # which parts of the code should be executed?
-param.plot.ops = F                 # should operationalisations be plotted?
+param.plot.ops = F                # should operationalisations be plotted?
 param.independents.generate = T    # should independents be generated?
-param.plot.ind = F                 # should independents be plotted?
+param.plot.ind = F               # should independents be plotted?
 
-param.median.threshold = 0.5
+param.median.threshold = 2
 # set plotting parameters
 param.plot.res = 300      # plot resolution in ppi
 param.plot.width = 16    
