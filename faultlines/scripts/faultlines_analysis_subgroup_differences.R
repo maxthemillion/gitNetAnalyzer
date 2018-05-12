@@ -17,7 +17,7 @@ param.plot.height = 12
 param.plot.units = "cm"
 
 param.path.root = "/Users/Max/Desktop/MA/R/NetworkAnalyzer/faultlines/"
-param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all.csv", sep = "")
+param.ops.in = paste(param.path.root, "data/variation/", param.dataset, "/ops_all_median.csv", sep = "")
 param.table.out =  paste(param.path.root, "/analysis/", param.dataset, "/variation/tables/", sep = "")
 param.plot.out = paste(param.path.root, "analysis/", param.dataset, "/variation/plots/", sep = "")
 
@@ -154,7 +154,7 @@ main <- function(){
                        function(x) kruskal.shares(x), 
                        .id = NULL)
   notes = c(paste("Number of projects tested: ", 
-                  nrow(test.res[!is.na(test.res$p_proximity_prestige_sd),]), sep  =""))
+                  nrow(test.res[!is.na(test.res$reputation),]), sep  =""))
   label = paste("tab:subgroup_diff_res", param.dataset, sep ="_")
   
   if(param.dataset == "sp180_c20"){

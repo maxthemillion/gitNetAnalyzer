@@ -14,10 +14,10 @@ param.dataset = "sp180_c20"
 param.sd.median = T
 
 # determine which models should be estimated when running the file
-param.estimate.standard = F
+param.estimate.standard = T
 param.estimate.ci = F
 param.estimate.blau = F
-param.estimate.sensitivity = T
+param.estimate.sensitivity = F
 param.estimate.moderation = F
 
 param.plot.facets = F
@@ -889,13 +889,13 @@ estimate.noncore.nbr.standard <- function(add_to_name = "", add_to_title = ""){
 #### ci models ####
 estimate.ci <- function(){
   form.s = releases ~
-    rel_persistent + 
-    rel_extensive + 
-    code_comment_focus +
-    issue_comment_focus +
-    techcontrib_focus +
     rel_high_reputation +
     rel_experienced +
+    techcontrib_focus +
+    code_comment_focus +
+    issue_comment_focus +
+    rel_persistent + 
+    rel_extensive + 
     travis
   
   
@@ -950,10 +950,9 @@ estimate.ci <- function(){
   m.noncore.ci.nbr.standard.4 <- glm.nb(form, data = oss.noncore, control = param.glm.control)
   
   out <- list()
-  out [[1]] <- m.releases.ci.nbr.standard.1
-  out [[2]] <- m.releases.ci.nbr.standard.2
-  out [[3]] <- m.releases.ci.zinbr.standard.1
-  out [[4]] <- m.noncore.ci.nbr.standard.4
+  out [[1]] <- m.releases.ci.nbr.standard.2
+  out [[2]] <- m.releases.ci.zinbr.standard.1
+  out [[3]] <- m.noncore.ci.nbr.standard.4
 
   m.to.table(out, 
              title = "Controlling for CI", 
@@ -1075,7 +1074,7 @@ estimate.blau <- function(){
 
 
 #### Moderation ####
-estimate.moderation.releases <- function(){
+estimate.moderation <- function(){
   # select
   oss.releases.old <- oss.releases
   oss.releases <<- oss.releases.old[oss.releases.old$travis == TRUE,]
@@ -1271,7 +1270,7 @@ main <- function(){
   }
   
   if(param.estimate.moderation){
-    estimate.moderation.releases()
+    estimate.moderation()
   }
   
   # clear environment
